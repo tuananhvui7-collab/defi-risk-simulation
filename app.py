@@ -154,7 +154,7 @@ with tab3:
     st.subheader("📜 Cấu trúc Smart Contract Solidity (Mạng Ethereum Sepolia)")
     st.markdown("""
     Toàn bộ hệ thống Smart Contract được thiết kế chuẩn mực theo kiến trúc **Aave V3 Core Architecture**, lưu trữ trong thư mục:
-    `contracts/` và `contract/`.
+    `contract/`.
     """)
 
     col_c1, col_c2 = st.columns(2)
@@ -181,4 +181,4 @@ with tab3:
         | **1.000** | 2.000 | 100.0% | **0.80** | 🔴 Đủ điều kiện thanh lý |
         """)
 
-    st.info("💡 Bạn có thể mở file `contracts/README.md` hoặc `contract/README.md` để xem hướng dẫn chi tiết từng bước bấm test trên Remix IDE và Sepolia Testnet!")
+    st.info("💡 Bạn có thể mở file `contract/README.md` để xem hướng dẫn chi tiết từng bước bấm test trên Remix IDE và Sepolia Testnet!")

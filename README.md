@@ -28,6 +28,7 @@ defi-risk-simulation/
 │   ├── agents.py                 # Tác nhân Mesa: BorrowerAgent, LenderAgent, LiquidatorAgent (Fixed vs Adaptive)
 │   ├── model.py                  # DeFiLendingMesaModel (168 bước, DataCollector)
 │   ├── runner.py                 # Trình điều phối chạy Ma trận 12 Thực nghiệm E1–E12 (Seed 42)
+│   ├── README.md                 # Hướng dẫn chi tiết kiến trúc ABM & kết quả thực nghiệm
 │   └── __init__.py
 ├── contract/                     # Smart Contract Solidity (Chuẩn Aave V3 Core)
 │   ├── MockUSDC.sol              # Token USDC 6 decimals, faucet mint 10.000 USDC

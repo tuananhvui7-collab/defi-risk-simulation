@@ -1,12 +1,12 @@
 /**
- * contracts/deploy.js — Deployment Script cho Sepolia Testnet hoặc Local Node
+ * contract/deploy.js — Deployment Script cho Sepolia Testnet hoặc Local Node
  * 
  * Sử dụng:
  * 1. Cài đặt ethers nếu chưa có: npm install ethers dotenv
  * 2. Cấu hình file .env:
  *    SEPOLIA_RPC_URL="https://eth-sepolia.g.alchemy.com/v2/YOUR_API_KEY"
  *    PRIVATE_KEY="0xYOUR_PRIVATE_KEY"
- * 3. Chạy script: node contracts/deploy.js
+ * 3. Chạy script: node contract/deploy.js
  */
 
 const fs = require('fs');

@@ -52,12 +52,12 @@ Giao thức cho vay được thiết kế chuẩn mực theo kiến trúc cốt 
 
 ## 2. Hướng dẫn Test Nhanh trên Remix IDE (Chỉ mất 2 phút)
 
-Bạn **không cần cài đặt môi trường phức tạp**, có thể dùng ngay file tổng hợp gộp sẵn: [`contracts/DeFiLendingPoolFlat.sol`](contracts/DeFiLendingPoolFlat.sol).
+Bạn **không cần cài đặt môi trường phức tạp**, có thể dùng ngay file tổng hợp gộp sẵn: [`contract/DeFiLendingPoolFlat.sol`](DeFiLendingPoolFlat.sol).
 
 ### Bước 1: Mở Remix IDE & Tạo file
 1. Mở trình duyệt truy cập: **[https://remix.ethereum.org](https://remix.ethereum.org)**.
 2. Tại cây thư mục bên trái (`contracts/`), tạo file mới tên `DeFiLendingPool.sol`.
-3. Mở file [contracts/DeFiLendingPoolFlat.sol](contracts/DeFiLendingPoolFlat.sol) trong repo này, **Copy toàn bộ nội dung** và Paste vào Remix.
+3. Mở file [contract/DeFiLendingPoolFlat.sol](DeFiLendingPoolFlat.sol) trong repo này, **Copy toàn bộ nội dung** và Paste vào Remix.
 
 ### Bước 2: Compile
 1. Bấm vào tab **Solidity Compiler** (icon thứ 3 bên trái).
@@ -130,7 +130,7 @@ Chuyển sang Account 1 (Admin của Oracle) để thay đổi giá ETH:
 
 ## 4. Triển khai lên Sepolia Testnet bằng Script
 
-Dự án đã có sẵn script [contracts/deploy.js](contracts/deploy.js):
+Dự án đã có sẵn script [contract/deploy.js](deploy.js):
 
 1. Tạo file `.env` ở thư mục gốc:
 ```env
@@ -139,6 +139,6 @@ PRIVATE_KEY="0xYOUR_SEPOLIA_PRIVATE_KEY"
 ```
 2. Chạy lệnh deploy:
 ```bash
-node contracts/deploy.js
+node contract/deploy.js
 ```
 Script sẽ tự động deploy lần lượt 4 hợp đồng, in ra địa chỉ và link Sepolia Etherscan sẵn sàng để bạn đưa vào **Chương 5 của Báo cáo bài tập lớn**.
