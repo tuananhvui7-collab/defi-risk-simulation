@@ -168,7 +168,14 @@ def main():
             writer = csv.DictWriter(f, fieldnames=all_results[0].keys())
             writer.writeheader()
             writer.writerows(all_results)
-    print(f"\n\n✓ Kết quả đã lưu tại {csv_path}")
+    # Chạy Ma trận 12 Thực nghiệm E1–E12 (Mesa ABM)
+    from abm.runner import run_all_experiments
+    print("\n\n" + "="*65)
+    print("🚀 CHẠY MA TRẬN 12 THỰC NGHIỆM E1–E12 QUA MESA ABM")
+    print("="*65)
+    run_all_experiments(num_borrowers=100, seed=42)
+
+    print(f"\n\n✓ Hoàn tất toàn bộ kịch bản và thực nghiệm!")
 
 
 if __name__ == "__main__":

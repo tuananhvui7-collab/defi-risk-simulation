@@ -128,15 +128,15 @@ BAD_DEBT_RULE = ParameterMeta(
 
 # --- Thị trường (Market) ---
 INITIAL_ETH_PRICE = ParameterMeta(
-    value=None,  # TODO
-    tag=ParameterTag.TODO,
-    source_notes="Lấy giá ETHUSDT tại một ngày cố định, ghi ngày và nguồn (Binance Vision)."
+    value=3465.98,  # Mốc thực tế bắt đầu đợt sụp đổ tháng 5/2021 (hoặc chuẩn hóa 2000.0 cho benchmark)
+    tag=ParameterTag.PAPER,
+    source_notes="Dữ liệu nến 1h ETHUSDT thực tế từ Binance Vision (17/05/2021 00:00 UTC). Giá chuẩn hóa: 2.000 USD."
 )
 
 HOURLY_VOLATILITY = ParameterMeta(
-    value=None,  # TODO
-    tag=ParameterTag.TODO,
-    source_notes="Độ lệch chuẩn lợi suất log theo giờ, tính từ dữ liệu ETHUSDT nến 1 giờ."
+    value=0.0305,  # 3.05% mỗi giờ (độ biến động hàng năm hóa 285.2%)
+    tag=ParameterTag.PAPER,
+    source_notes="Độ lệch chuẩn lợi suất log 1h tính từ 168 nến ETHUSDT thực tế (17/05/2021 - 23/05/2021 trên Binance Vision)."
 )
 
 PRICE_PATH_MODEL = ParameterMeta(

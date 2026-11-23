@@ -1,0 +1,11 @@
+{
+    "preset_key": "MAY_2021",
+    "name": "Đợt sụp đổ tháng 5/2021 (Black Wednesday)",
+    "description": "ETH sụt giảm từ ~3.465$ về ~1.728$ (-50.1%), gây ra đợt thanh lý kỷ lục trong lịch sử DeFi.",
+    "p0_actual": 3465.98,
+    "p_min_actual": 1728.74,
+    "max_drop_pct": -50.122620442126035,
+    "hourly_volatility": 0.030471608672776658,
+    "annualized_volatility": 2.8519863028310457,
+    "num_steps": 168
+}
