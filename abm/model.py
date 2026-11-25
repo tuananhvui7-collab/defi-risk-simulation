@@ -53,6 +53,7 @@ class DeFiLendingMesaModel(mesa.Model):
         self.max_steps = 168
         self.price_history = []
         self.bad_debt_events = []
+        self.event_logs = []
 
         # 1. Khởi tạo Môi trường thị trường
         self.market = MarketEnvironment(
@@ -199,7 +200,16 @@ class DeFiLendingMesaModel(mesa.Model):
 
         m_state = self.market.get_market_state(self.current_step)
         eth_price = m_state["eth_price"]
+        prev_price = self.price_history[-1] if self.price_history else eth_price
         self.price_history.append(eth_price)
+
+        # Log biến động giá mạnh
+        price_change_pct = ((eth_price - prev_price) / prev_price) * 100.0 if prev_price > 0 else 0.0
+        if abs(price_change_pct) >= 2.5:
+            direction = "sụt giảm" if price_change_pct < 0 else "hồi phục"
+            self.event_logs.append(
+                f"⏱️ [Giờ {self.current_step:03d}] Giá ETH {direction} {price_change_pct:+.1f}% -> ${eth_price:,.2f}"
+            )
 
         # 1. Bể cho vay cộng dồn lãi suất nợ và lãi gửi
         self.pool.accrue_interest_step()
@@ -240,6 +250,10 @@ class DeFiLendingMesaModel(mesa.Model):
 
         # 6. Giai đoạn 4: Bể xử lý hàng chờ rút tiền với cash mới
         self.pool.process_withdrawal_queue(self.current_step, self.lenders_dict)
+        if self.pool.total_pending_withdrawals > 0 and (self.current_step % 12 == 0 or self.current_step == 25):
+            self.event_logs.append(
+                f"⏳ [Giờ {self.current_step:03d}] Bể cạn thanh khoản! Hàng chờ rút kẹt ${self.pool.total_pending_withdrawals:,.0f} USDC (Utilization: {self.pool.utilization_rate*100:.1f}%)"
+            )
 
         # 7. Thu thập dữ liệu cuối bước
         self.datacollector.collect(self)

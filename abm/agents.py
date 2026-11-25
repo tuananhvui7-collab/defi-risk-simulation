@@ -307,3 +307,12 @@ class LiquidatorAgent(mesa.Agent):
                 "step": self.model.current_step,
                 "amount": bad_debt
             })
+            if hasattr(self.model, "event_logs"):
+                self.model.event_logs.append(
+                    f"💥 [Giờ {self.model.current_step:03d}] VỠ NỢ! Phát sinh ${bad_debt:,.1f} USDC nợ xấu (Khấu trừ vốn Lender)"
+                )
+        else:
+            if hasattr(self.model, "event_logs"):
+                self.model.event_logs.append(
+                    f"⚡ [Giờ {self.model.current_step:03d}] Liquidator thanh lý Borrower #{borrower.unique_id}: Trả ${repay_amount:,.0f} nợ, tịch thu {actual_eth_seized:.2f} ETH (Lãi ròng: +${net_profit:,.1f})"
+                )

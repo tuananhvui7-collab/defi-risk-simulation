@@ -88,15 +88,32 @@ contract MockUSDC {
 }
 
 // ==============================================================================
-// 2. MOCK PRICE ORACLE (8 DECIMALS - CHAINLINK STYLE)
+// 2. PRICE ORACLE (CHAINLINK LIVE ON SEPOLIA & REAL BINANCE DATA)
 // ==============================================================================
+
+interface AggregatorV3Interface {
+    function decimals() external view returns (uint8);
+    function latestRoundData() external view returns (
+        uint80 roundId,
+        int256 answer,
+        uint256 startedAt,
+        uint256 updatedAt,
+        uint80 answeredInRound
+    );
+}
 
 contract MockPriceOracle {
     address public owner;
+    
+    // Sepolia Chainlink ETH/USD aggregator address
+    AggregatorV3Interface public chainlinkEthFeed;
+    bool public useChainlinkLive;
+
     mapping(address => uint256) public assetPrices;
     address public constant ETH_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     event AssetPriceUpdated(address indexed asset, uint256 oldPrice, uint256 newPrice, uint256 timestamp);
+    event ChainlinkLiveToggled(bool enabled, address indexed feedAddress);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Oracle: not owner");
@@ -105,7 +122,20 @@ contract MockPriceOracle {
 
     constructor() {
         owner = msg.sender;
-        assetPrices[ETH_ADDRESS] = 2000 * 10**8; // $2,000.00
+        // Giá ETH thực tế từ Binance Vision (Tháng 5/2021): $3,465.98 (8 decimals)
+        assetPrices[ETH_ADDRESS] = 346598000000;
+        chainlinkEthFeed = AggregatorV3Interface(0x694AA1769357215DE4FAC081bf1f309aDC325306);
+        useChainlinkLive = false;
+    }
+
+    function setUseChainlinkLive(bool _useLive) external onlyOwner {
+        useChainlinkLive = _useLive;
+        emit ChainlinkLiveToggled(_useLive, address(chainlinkEthFeed));
+    }
+
+    function setChainlinkFeed(address _feedAddress) external onlyOwner {
+        require(_feedAddress != address(0), "Oracle: invalid feed");
+        chainlinkEthFeed = AggregatorV3Interface(_feedAddress);
     }
 
     function setAssetPrice(address asset, uint256 price) external onlyOwner {
@@ -122,14 +152,32 @@ contract MockPriceOracle {
         emit AssetPriceUpdated(ETH_ADDRESS, oldPrice, price, block.timestamp);
     }
 
+    function getEthPrice() public view returns (uint256) {
+        if (useChainlinkLive && address(chainlinkEthFeed) != address(0)) {
+            try chainlinkEthFeed.latestRoundData() returns (
+                uint80,
+                int256 answer,
+                uint256,
+                uint256 updatedAt,
+                uint80
+            ) {
+                if (answer > 0 && updatedAt > 0) {
+                    return uint256(answer);
+                }
+            } catch {
+                // Fallback nếu oracle nghẽn
+            }
+        }
+        return assetPrices[ETH_ADDRESS];
+    }
+
     function getAssetPrice(address asset) external view returns (uint256) {
+        if (asset == ETH_ADDRESS) {
+            return getEthPrice();
+        }
         uint256 price = assetPrices[asset];
         require(price > 0, "Oracle: price not set");
         return price;
-    }
-
-    function getEthPrice() external view returns (uint256) {
-        return assetPrices[ETH_ADDRESS];
     }
 
     function transferOwnership(address newOwner) external onlyOwner {

@@ -68,10 +68,23 @@ defi-risk-simulation/
 
 ## ⚙️ Hướng dẫn Cài đặt & Chạy Chi tiết
 
-### 1. Cài đặt Môi trường & Thư viện
-Yêu cầu Python 3.10 trở lên:
-```bash
-pip install streamlit pandas numpy scipy matplotlib seaborn pytest ipywidgets mesa
+### 1. Khởi tạo Môi trường Ảo (Virtual Environment)
+Khuyến nghị tạo môi trường ảo `.venv` để cô lập thư viện dự án:
+```powershell
+# Tạo môi trường ảo
+python -m venv .venv
+
+# Kích hoạt môi trường ảo (Windows PowerShell)
+.\.venv\Scripts\Activate.ps1
+
+# (Hoặc trên Command Prompt / CMD)
+# .venv\Scripts\activate.bat
+
+# (Hoặc trên Linux / macOS)
+# source .venv/bin/activate
+
+# Cài đặt toàn bộ thư viện cần thiết
+pip install -r requirements.txt
 ```
 
 ---

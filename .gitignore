@@ -14,6 +14,9 @@ venv/
 .venv/
 env/
 
+# Reports (excluded as requested)
+docs/
+
 # Streamlit
 .streamlit/
 

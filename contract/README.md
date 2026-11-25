@@ -128,10 +128,19 @@ Chuyển sang Account 1 (Admin của Oracle) để thay đổi giá ETH:
 
 ---
 
-## 4. Triển khai lên Sepolia Testnet bằng Script
+## 4. Triển khai lên Sepolia Testnet bằng Script & Nạp Dữ Liệu ETH Thật
 
-Dự án đã có sẵn script [contract/deploy.js](deploy.js):
+Hợp đồng `MockPriceOracle` đã được nâng cấp để **hoạt động hoàn toàn bằng dữ liệu thực tế** (thay vì dữ liệu test giả định):
+1. **Khởi tạo bằng Giá Binance Thật**: Giá ban đầu được đặt chính xác tại `$3,465.98` (giá nến thật của ETH tại thời điểm bắt đầu đợt sụp đổ tháng 5/2021).
+2. **Chế độ Chainlink Live Oracle trên Sepolia**:
+   - Gọi hàm `setUseChainlinkLive(true)` trên hợp đồng `MockPriceOracle`.
+   - Hợp đồng sẽ tự động kéo giá thời gian thực trực tiếp từ mạng lưới phi tập trung Chainlink Sepolia:  
+     `Aggregator: 0x694AA1769357215DE4FAC081bf1f309aDC325306`.
+3. **Nạp 168 nến lịch sử Binance bằng Script**:
+   - Chạy script: `python contract/feed_oracle_real_data.py` để nạp chuỗi nến biến động thực tế vào hợp đồng.
+4. **Kiểm thử logic toán học**: Toàn bộ unit tests và test vectors được giữ cách ly hoàn toàn trong Python (`pytest tests/ -v`).
 
+### Hướng dẫn Deploy lên Sepolia:
 1. Tạo file `.env` ở thư mục gốc:
 ```env
 SEPOLIA_RPC_URL="https://rpc.sepolia.org"
