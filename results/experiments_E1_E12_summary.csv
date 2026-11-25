@@ -1,13 +1,13 @@
 ﻿Mã thực nghiệm,Kịch bản,Chiến lược,Nợ xấu (USDC),Số Borrower bị TL,Tỷ lệ thanh lý (%),Utilization max (%),Lãi vay max (% APR),Cash khả dụng TB (USDC),Rút tiền bị kẹt (USDC),Độ trễ rút TB (giờ),Lợi nhuận Liquidator ($),Mục đích kiểm chứng
-E1,S0,Fixed,0.0,64,64.0,60.0,3.0,397255.57,0.0,0.0,4997.28,Đường cơ sở so sánh
-E2,S0,Adaptive,0.0,49,49.0,67.56,3.38,176475.36,0.0,0.0,3826.23,Đường cơ sở so sánh
-E3,S1,Fixed,0.0,64,64.0,60.0,3.0,473032.25,0.0,0.0,4892.59,"Kiểm tra H1, H4 (Rủi ro thanh lý)"
-E4,S1,Adaptive,0.0,50,50.0,67.51,3.38,155258.17,0.0,0.0,3725.1,"Kiểm tra H1, H4 (Rủi ro thanh lý)"
-E5,S2,Fixed,0.0,64,64.0,98.35,72.82,143464.29,0.0,0.0,4997.28,Kiểm tra H3 (Khả năng đáp ứng rút tiền)
-E6,S2,Adaptive,0.0,49,49.0,100.0,79.0,36281.8,472926.45,15.87,3826.23,Kiểm tra H3 (Khả năng đáp ứng rút tiền)
-E7,S3,Fixed,0.0,64,64.0,90.01,41.52,201361.81,0.0,0.0,4997.28,Chi phí vay và áp lực thanh khoản
-E8,S3,Adaptive,0.0,49,49.0,100.0,79.0,40271.33,351109.41,18.86,3826.23,Chi phí vay và áp lực thanh khoản
-E9,S4,Fixed,0.0,2,2.0,60.0,3.0,397849.06,0.0,0.0,21.34,"Kiểm tra H2, H5 (Hiệu quả thanh lý)"
-E10,S4,Adaptive,0.0,11,11.0,67.47,3.37,192519.88,0.0,0.0,298.09,"Kiểm tra H2, H5 (Hiệu quả thanh lý)"
-E11,S5,Fixed,0.0,2,2.0,80.15,4.56,152115.95,0.0,0.0,21.34,"Kiểm tra H5, H6 (Khả năng chống chịu)"
-E12,S5,Adaptive,0.0,11,11.0,100.0,79.0,36361.65,589918.05,4.83,288.56,"Kiểm tra H5, H6 (Khả năng chống chịu)"
+E1,S0,Fixed,0.0,64,64.0,60.0,3.0,397210.2,0.0,0.0,4952.08,Đường cơ sở so sánh
+E2,S0,Adaptive,0.0,49,49.0,67.55,3.38,176498.78,0.0,0.0,3828.8,Đường cơ sở so sánh
+E3,S1,Fixed,0.0,64,64.0,60.0,3.0,473055.99,0.0,0.0,4893.84,"Kiểm tra H1, H4 (Rủi ro thanh lý)"
+E4,S1,Adaptive,0.0,50,50.0,67.51,3.38,155269.74,0.0,0.0,3726.4,"Kiểm tra H1, H4 (Rủi ro thanh lý)"
+E5,S2,Fixed,0.0,65,65.0,100.0,79.0,90158.41,-0.0,5.42,5102.76,Kiểm tra H3 (Khả năng đáp ứng rút tiền)
+E6,S2,Adaptive,0.0,53,53.0,100.0,79.0,35239.1,618769.79,15.28,4129.11,Kiểm tra H3 (Khả năng đáp ứng rút tiền)
+E7,S3,Fixed,0.0,25,25.0,87.76,33.08,164791.77,0.0,0.0,5560.85,Chi phí vay và áp lực thanh khoản
+E8,S3,Adaptive,0.0,100,100.0,100.0,79.0,40322.12,71719.6,64.53,14898.61,Chi phí vay và áp lực thanh khoản
+E9,S4,Fixed,0.0,2,2.0,60.0,3.0,387507.5,0.0,0.0,21.42,"Kiểm tra H2, H5 (Hiệu quả thanh lý)"
+E10,S4,Adaptive,0.0,11,11.0,67.47,3.37,191634.39,0.0,0.0,298.96,"Kiểm tra H2, H5 (Hiệu quả thanh lý)"
+E11,S5,Fixed,0.0,2,2.0,96.18,64.69,89800.67,0.0,0.0,21.48,"Kiểm tra H5, H6 (Khả năng chống chịu)"
+E12,S5,Adaptive,0.0,13,13.0,100.0,79.0,35433.25,726233.59,3.51,323.07,"Kiểm tra H5, H6 (Khả năng chống chịu)"

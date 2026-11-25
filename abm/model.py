@@ -136,6 +136,7 @@ class DeFiLendingMesaModel(mesa.Model):
 
         self.pool.total_supply_usdc = total_supply_needed
         self.pool.total_cash_usdc = total_supply_needed - total_borrowed # 1 - U0 = 40%
+        self.initial_total_supply = float(total_supply_needed)
 
         # 5. Tạo Tác nhân Liquidator (10 liquidator, tổng vốn 500.000 USD)
         self.liquidators = []
@@ -211,28 +212,41 @@ class DeFiLendingMesaModel(mesa.Model):
                 f"⏱️ [Giờ {self.current_step:03d}] Giá ETH {direction} {price_change_pct:+.1f}% -> ${eth_price:,.2f}"
             )
 
-        # 1. Bể cho vay cộng dồn lãi suất nợ và lãi gửi
-        self.pool.accrue_interest_step()
+        # 1. Bể cho vay cộng dồn lãi suất nợ và lãi gửi, đồng thời cộng dồn nợ cho từng Borrower
+        u, r_borrow, r_supply = self.pool.accrue_interest_step()
+        dt_year = 1.0 / 8760.0
+        borrow_rate_step = r_borrow * dt_year
+        for b in self.borrowers:
+            if b.debt_usdc > 0:
+                b.debt_usdc += b.debt_usdc * borrow_rate_step
 
         # 2. Xử lý các cú sốc kịch bản ngoại sinh
-        # Kịch bản S2: Lender rút 50% tổng cung trong 12 bước từ bước 24
+        # Kịch bản S2: Lender rút 50% tổng cung USDC ban đầu trong 12 bước từ bước 24
         if self.scenario_id in ["S2", "S5"]:
             if 24 <= self.current_step < 36:
-                # Mỗi bước rút (50% / 12) = ~4.16% tổng cung
-                shock_withdrawal = (self.pool.total_supply_usdc * 0.50) / 12.0
+                # Mỗi bước rút (50% / 12) = ~4.1667% tổng cung USDC ban đầu
+                shock_withdrawal = (self.initial_total_supply * 0.50) / 12.0
                 self.pool.queue_withdrawal(lender_id=9999, amount=shock_withdrawal, current_step=self.current_step)
 
-        # Kịch bản S3: Utilization mục tiêu 0.90 đạt trong 12 bước từ bước 24
+        # Kịch bản S3: Utilization mục tiêu 0.90 đạt trong 12 bước từ bước 24 (Vượt điểm gãy 80%)
         if self.scenario_id == "S3":
             if 24 <= self.current_step < 36:
-                # Đẩy utilization bằng cách tăng nhu cầu vay ngoại sinh
+                # Đẩy utilization lên 90% bằng cách tăng nhu cầu vay ngoại sinh gán trực tiếp cho Borrowers
                 target_u = 0.90
                 current_u = self.pool.utilization_rate
-                if current_u < target_u:
+                if current_u < target_u and self.pool.total_cash_usdc > 0:
                     needed_borrow = (target_u * (self.pool.total_cash_usdc + self.pool.total_debt_usdc)) - self.pool.total_debt_usdc
                     step_borrow = max(0.0, needed_borrow / (36 - self.current_step))
-                    self.pool.total_debt_usdc += step_borrow
-                    self.pool.total_cash_usdc = max(0.0, self.pool.total_cash_usdc - step_borrow)
+                    actual_step_borrow = min(step_borrow, self.pool.total_cash_usdc)
+                    if actual_step_borrow > 0:
+                        active_borrowers = [b for b in self.borrowers if b.debt_usdc > 0 and b.collateral_eth > 0]
+                        if active_borrowers:
+                            total_active_debt = sum(b.debt_usdc for b in active_borrowers)
+                            for b in active_borrowers:
+                                share = (b.debt_usdc / total_active_debt) if total_active_debt > 0 else (1.0 / len(active_borrowers))
+                                b.debt_usdc += actual_step_borrow * share
+                        self.pool.total_debt_usdc += actual_step_borrow
+                        self.pool.total_cash_usdc = max(0.0, self.pool.total_cash_usdc - actual_step_borrow)
 
         # 3. Giai đoạn 1: Hành động của Borrowers (Kiểm tra vị thế, tự vệ hoặc vay thêm)
         for b in self.borrowers:

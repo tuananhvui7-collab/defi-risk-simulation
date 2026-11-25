@@ -76,23 +76,11 @@ class MarketEnvironment:
             for t in range(start_step + duration, 168):
                 prices[t] = min(prices[t], p_target)
 
-        # S4: Cú sốc chi phí vận hành - Gas 100 USD, trượt giá s*5, V*0.1, ETH giảm 25%
+        # S4: Cú sốc chi phí vận hành - Gas 100 USD, trượt giá s=5, V=100M USD (giữ nguyên đường giá lịch sử cơ sở)
         if self.scenario_id in ["S4", "S5"]:
             gas_fees[:] = 100.0 # Gas tăng vọt 100 USD/tx
             slippage_s[:] = 5.0 # Hệ số trượt giá tăng gấp 5
             slippage_v[:] = 100_000_000.0 # Độ sâu thị trường co hẹp về 100 triệu USD
-
-            if self.scenario_id == "S4":
-                # S4 có giá giảm 25% trong 24 bước từ bước 24
-                start_step = 24
-                duration = 24
-                target_drop = 0.25
-                p_start = prices[start_step]
-                for t in range(start_step, start_step + duration):
-                    alpha = (t - start_step + 1) / duration
-                    prices[t] = p_start * (1 - alpha * target_drop)
-                for t in range(start_step + duration, 168):
-                    prices[t] = min(prices[t], p_start * (1 - target_drop))
 
         return prices, gas_fees, slippage_s, slippage_v
 
