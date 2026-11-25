@@ -45,8 +45,8 @@ async function main() {
     // Đọc ABI và Bytecode đã compile
     const buildDir = path.join(__dirname, 'build');
     function getArtifact(contractName) {
-        const abiPath = path.join(buildDir, `contracts_DeFiLendingPoolFlat_sol_${contractName}.abi`);
-        const binPath = path.join(buildDir, `contracts_DeFiLendingPoolFlat_sol_${contractName}.bin`);
+        const abiPath = path.join(buildDir, `contract_DeFiLendingPoolFlat_sol_${contractName}.abi`);
+        const binPath = path.join(buildDir, `contract_DeFiLendingPoolFlat_sol_${contractName}.bin`);
         const abi = JSON.parse(fs.readFileSync(abiPath, 'utf8'));
         const bin = "0x" + fs.readFileSync(binPath, 'utf8').trim();
         return { abi, bin };
