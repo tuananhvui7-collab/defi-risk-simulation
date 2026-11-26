@@ -13,12 +13,18 @@ build/
 venv/
 .venv/
 env/
+node_modules/
 
 # Reports (excluded as requested)
 docs/
 
 # Streamlit
 .streamlit/
+
+# Environment files (may contain API keys or wallet credentials)
+.env
+.env.*
+!.env.example
 
 # Results (optional - bỏ comment nếu không muốn commit CSV)
 # results/*.csv
