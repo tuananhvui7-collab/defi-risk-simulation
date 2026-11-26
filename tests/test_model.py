@@ -1,40 +1,45 @@
-"""
-test_model.py — Unit test: tính HF và ràng buộc số dư
+"""Health-factor unit tests for the current Mesa borrower model."""
 
-Ví dụ tính tay (examples.md):
-  Case 1 — An toàn:    col=5 ETH, debt=5000 USDC, price=2000 → HF = 5*2000*0.825/5000 = 1.65
-  Case 2 — Đủ TL:      col=5 ETH, debt=9000 USDC, price=2000 → HF = 5*2000*0.825/9000 = 0.917
-  Case 3 — Thiếu hụt:  col=1 ETH, debt=2000 USDC, price=1200 → HF = 1*1200*0.825/2000 = 0.495
-"""
-import pytest
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import math
 
-from model import Borrower, LIQUIDATION_THRESHOLD
+from abm.model import DeFiLendingMesaModel
+
+
+def make_model():
+    return DeFiLendingMesaModel(
+        scenario_id="S0", num_borrowers=1, num_lenders=1,
+        num_liquidators=1, seed=42
+    )
+
 
 def test_hf_safe():
-    b = Borrower.create(5.0, 5000.0)
-    hf = b.health_factor(eth_price=2000.0)
-    assert abs(hf - 1.65) < 0.001, f"HF={hf}"
+    model = make_model()
+    borrower = model.borrowers[0]
+    borrower.collateral_eth = 5.0
+    borrower.debt_usdc = 5000.0
+    assert borrower.health_factor(2000.0, model.pool.liquidation_threshold) == 1.6
+
 
 def test_hf_undercollateralized():
-    b = Borrower.create(5.0, 9000.0)
-    hf = b.health_factor(eth_price=2000.0)
-    assert abs(hf - 0.9167) < 0.001, f"HF={hf}"
-    assert b.is_undercollateralized(2000.0)
+    model = make_model()
+    borrower = model.borrowers[0]
+    borrower.collateral_eth = 5.0
+    borrower.debt_usdc = 9000.0
+    hf = borrower.health_factor(2000.0, model.pool.liquidation_threshold)
+    assert hf < 1.0
+    assert math.isclose(hf, 8 / 9)
+
 
 def test_hf_severe_shortfall():
-    b = Borrower.create(1.0, 2000.0)
-    hf = b.health_factor(eth_price=1200.0)
-    assert abs(hf - 0.495) < 0.001, f"HF={hf}"
-    assert b.is_undercollateralized(1200.0)
+    model = make_model()
+    borrower = model.borrowers[0]
+    borrower.collateral_eth = 1.0
+    borrower.debt_usdc = 2000.0
+    assert borrower.health_factor(1200.0, model.pool.liquidation_threshold) == 0.48
 
-def test_no_debt():
-    b = Borrower.create(5.0, 0.0)
-    assert b.health_factor(2000.0) == float("inf")
 
-def test_collateral_non_negative_after_creation():
-    b = Borrower.create(2.5, 3000.0)
-    assert b.collateral_eth >= 0
-    assert b.debt_usdc >= 0
+def test_no_debt_has_infinite_health_factor():
+    model = make_model()
+    borrower = model.borrowers[0]
+    borrower.debt_usdc = 0.0
+    assert borrower.health_factor(2000.0, model.pool.liquidation_threshold) == float("inf")

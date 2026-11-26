@@ -42,6 +42,7 @@ class BorrowerAgent(mesa.Agent):
         self.times_liquidated = 0
         self.is_liquidated = False
         self.shortfall = 0.0
+        self.ever_undercollateralized = False
 
     def health_factor(self, eth_price: float, lt: float) -> float:
         if self.debt_usdc <= 0:

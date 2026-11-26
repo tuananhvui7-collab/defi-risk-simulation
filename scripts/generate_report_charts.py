@@ -1,222 +1,195 @@
-"""
-scripts/generate_report_charts.py — Tạo toàn bộ biểu đồ khoa học chất lượng cao cho Báo cáo BTL
-Xuất ra thư mục results/figures/ với độ phân giải cao (300 DPI).
-"""
+"""Generate black-and-white-friendly Vietnamese report figures from current results."""
 
 import os
 import sys
+import sys
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 RESULTS_DIR = os.path.join(PROJECT_ROOT, "results")
-FIG_DIR = os.path.join(RESULTS_DIR, "figures")
+FIG_DIR = os.path.join(PROJECT_ROOT, "figures")
+LEGACY_FIG_DIR = os.path.join(RESULTS_DIR, "figures")
 os.makedirs(FIG_DIR, exist_ok=True)
+os.makedirs(LEGACY_FIG_DIR, exist_ok=True)
 
-# Cấu hình phong cách biểu đồ học thuật
-plt.rcParams['font.sans-serif'] = 'DejaVu Sans'
-plt.rcParams['axes.edgecolor'] = '#333333'
-plt.rcParams['axes.linewidth'] = 0.8
-sns.set_theme(style="whitegrid")
+plt.rcParams.update({
+    "font.family": "DejaVu Sans",
+    "axes.edgecolor": "black",
+    "axes.linewidth": 0.8,
+    "figure.dpi": 150,
+    "savefig.dpi": 300,
+})
 
-# ==============================================================================
-# HÌNH 1: ĐƯỜNG GIÁ THỰC TẾ 168H BINANCE VISION (MAY 2021 CRASH)
-# ==============================================================================
+
+def save_figure(fig, filename):
+    path = os.path.join(FIG_DIR, filename)
+    fig.tight_layout()
+    fig.savefig(path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Đã tạo {path}")
+    # Keep the project's pre-existing results/figures location in sync.
+    import shutil
+    shutil.copy2(path, os.path.join(LEGACY_FIG_DIR, filename))
+
+
 def plot_eth_price_168h():
-    csv_path = os.path.join(PROJECT_ROOT, "data", "eth_usdt_168h_may2021.csv")
-    df = pd.read_csv(csv_path)
+    from abm.market import MarketEnvironment
 
-    fig, ax = plt.subplots(figsize=(10, 4.5), dpi=300)
-    ax.plot(df["step"], df["close"], color="#1f77b4", lw=2, label="Giá ETH (Binance 1h Candles)")
-
-    # Đánh dấu các mốc quan trọng
-    p0 = df["close"].iloc[0]
-    p_min = df["close"].min()
-    step_min = df["close"].idxmin()
-
-    ax.scatter([0], [p0], color="green", s=60, zorder=5)
-    ax.annotate(f"Bắt đầu: ${p0:,.2f}", (0, p0), textcoords="offset points", xytext=(10, 5), fontweight='bold')
-
-    ax.scatter([step_min], [p_min], color="red", s=60, zorder=5)
-    ax.annotate(f"Đáy sụp đổ: ${p_min:,.2f} (-50.1%)", (step_min, p_min), textcoords="offset points", xytext=(-80, -20), fontweight='bold', color="red")
-
-    # Tô vùng bão giá (Giờ 24 - 48)
-    ax.axvspan(24, 48, color='orange', alpha=0.15, label="Cửa sổ cú sốc cấp tính (Giờ 24 - 48)")
-
-    ax.set_title("HÌNH 1. ĐƯỜNG GIÁ ETH/USDT THỰC TẾ 168 GIỜ (ĐỢT SỤP ĐỔ THÁNG 5/2021 - BINANCE VISION)", fontsize=11, fontweight='bold', pad=12)
-    ax.set_xlabel("Bước thời gian (Giờ)", fontsize=10)
-    ax.set_ylabel("Giá ETH (USD)", fontsize=10)
-    ax.legend(loc="upper right", frameon=True)
-    plt.tight_layout()
-
-    out_path = os.path.join(FIG_DIR, "fig1_eth_price_168h.png")
-    fig.savefig(out_path)
-    plt.close(fig)
-    print(f"✅ Đã tạo: {out_path}")
+    base = MarketEnvironment(scenario_id="S0", seed=42)
+    shock = MarketEnvironment(scenario_id="S1", seed=42)
+    steps = np.arange(168)
+    fig, ax = plt.subplots(figsize=(10, 4.7))
+    ax.plot(steps, base.prices, color="black", linestyle="-", linewidth=2,
+            label="S0 — Baseline ổn định", marker="o", markevery=24, markersize=3)
+    ax.plot(steps, shock.prices, color="#555555", linestyle="--", linewidth=1.8,
+            label="S1 — Sốc giá (-43%)", marker="s", markevery=24, markersize=3)
+    ax.axvspan(24, 48, facecolor="none", edgecolor="#777777", hatch="////",
+               linewidth=0, label="Cửa sổ sốc, giờ 24–47")
+    ax.set(title="Hình 1. Đường giá ETH mô phỏng: Baseline và Sốc giá",
+           xlabel="Thời gian (giờ)", ylabel="Giá ETH (USD)")
+    ax.grid(True, color="#bbbbbb", linewidth=0.5)
+    ax.legend(frameon=True)
+    save_figure(fig, "fig1_eth_price_168h.png")
 
 
-# ==============================================================================
-# HÌNH 2: SO SÁNH MA TRẬN 12 THỰC NGHIỆM E1–E12 (FIXED VS ADAPTIVE)
-# ==============================================================================
 def plot_e1_e12_comparison():
-    summary_path = os.path.join(RESULTS_DIR, "experiments_E1_E12_summary.csv")
-    df = pd.read_csv(summary_path)
-
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5), dpi=300)
-
-    # 1. Tỷ lệ thanh lý theo kịch bản
-    sns.barplot(data=df, x="Kịch bản", y="Tỷ lệ thanh lý (%)", hue="Chiến lược", palette={"Fixed": "#e74c3c", "Adaptive": "#2ecc71"}, ax=ax1)
-    ax1.set_title("Tỷ lệ Vị thế Bị Thanh lý (%) theo Kịch bản", fontsize=11, fontweight='bold')
-    ax1.set_ylabel("Tỷ lệ thanh lý (%)", fontsize=10)
-    ax1.set_xlabel("Kịch bản Thị trường (S0 - S5)", fontsize=10)
-    for p in ax1.patches:
-        height = p.get_height()
-        if height > 0:
-            ax1.annotate(f"{height:.1f}%", (p.get_x() + p.get_width() / 2., height),
-                         ha='center', va='bottom', fontsize=8, xytext=(0, 2), textcoords='offset points')
-
-    # 2. Lợi nhuận của Liquidator theo kịch bản
-    sns.barplot(data=df, x="Kịch bản", y="Lợi nhuận Liquidator ($)", hue="Chiến lược", palette={"Fixed": "#e74c3c", "Adaptive": "#2ecc71"}, ax=ax2)
-    ax2.set_title("Tổng Lợi nhuận Ròng của Liquidator ($)", fontsize=11, fontweight='bold')
-    ax2.set_ylabel("Lợi nhuận ròng ($ USD)", fontsize=10)
-    ax2.set_xlabel("Kịch bản Thị trường (S0 - S5)", fontsize=10)
-    for p in ax2.patches:
-        height = p.get_height()
-        if height > 0:
-            ax2.annotate(f"${height:,.0f}", (p.get_x() + p.get_width() / 2., height),
-                         ha='center', va='bottom', fontsize=8, xytext=(0, 2), textcoords='offset points')
-
-    plt.suptitle("HÌNH 2. ĐỐI CHỨNG HIỆU QUẢ GIỮA CHIẾN LƯỢC CỐ ĐỊNH (FIXED) VÀ THÍCH NGHI (ADAPTIVE)", fontsize=13, fontweight='bold', y=1.02)
-    plt.tight_layout()
-
-    out_path = os.path.join(FIG_DIR, "fig2_e1_e12_comparison.png")
-    fig.savefig(out_path)
-    plt.close(fig)
-    print(f"✅ Đã tạo: {out_path}")
+    path = os.path.join(RESULTS_DIR, "experiments_E1_E12_summary.csv")
+    df = pd.read_csv(path)
+    fig, axes = plt.subplots(3, 1, figsize=(13, 11), sharex=True)
+    series = [
+        ("Tỷ lệ thanh lý (%)", "Tỷ lệ borrower từng bị thanh lý (%)"),
+        ("liquidation_coverage_ratio", "Liquidation Coverage Ratio"),
+        ("Rút tiền bị kẹt (USDC)", "Tiền rút còn kẹt cuối phiên (USDC)"),
+    ]
+    x = np.arange(len(df) // 2)
+    experiment_order = [f"E{i}" for i in range(1, 13)]
+    fixed = df[df["Chiến lược"].str.lower() == "fixed"].copy()
+    adaptive = df[df["Chiến lược"].str.lower() == "adaptive"].copy()
+    for run in (fixed, adaptive):
+        run["Mã thực nghiệm"] = pd.Categorical(run["Mã thực nghiệm"], categories=experiment_order, ordered=True)
+    fixed = fixed.sort_values("Mã thực nghiệm")
+    adaptive = adaptive.sort_values("Mã thực nghiệm")
+    labels = fixed["Mã thực nghiệm"].tolist()
+    for ax, (metric, ylabel) in zip(axes, series):
+        width = 0.38
+        a = ax.bar(x - width / 2, fixed[metric], width, label="Fixed",
+                   facecolor="white", edgecolor="black", hatch="///")
+        b = ax.bar(x + width / 2, adaptive[metric], width, label="Adaptive",
+                   facecolor="#bdbdbd", edgecolor="black", hatch="...")
+        ax.bar_label(a, fmt="%.2f", padding=2, fontsize=7)
+        ax.bar_label(b, fmt="%.2f", padding=2, fontsize=7)
+        ax.set_ylabel(ylabel)
+        ax.grid(axis="y", color="#bbbbbb", linewidth=0.5)
+        ax.legend(ncols=2)
+    axes[-1].set_xticks(x, labels)
+    axes[-1].set_xlabel("Mã thực nghiệm")
+    fig.suptitle("Hình 2. So sánh E1–E12 theo dữ liệu vừa chạy", fontsize=13)
+    save_figure(fig, "fig2_e1_e12_comparison.png")
 
 
-# ==============================================================================
-# HÌNH 3: HIỆN TƯỢNG THÁO CHẠY RÚT VỐN & KẸT THANH KHOẢN (BANK-RUN)
-# ==============================================================================
 def plot_withdrawal_queue():
-    ts_path = os.path.join(RESULTS_DIR, "experiments_E1_E12_timeseries.csv")
-    df = pd.read_csv(ts_path)
-
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 7), sharex=True, dpi=300)
-
-    # Lọc các thực nghiệm S2 (E5, E6) và S5 (E11, E12)
-    e6 = df[df["experiment_id"] == "E6"] # S2 Adaptive
-    e12 = df[df["experiment_id"] == "E12"] # S5 Adaptive
-
-    # Đồ thị Utilization
-    ax1.plot(e6["step"], e6["utilization_rate"] * 100, label="E6 (S2 - Sốc rút vốn 50%)", color="#9b59b6", lw=2)
-    ax1.plot(e12["step"], e12["utilization_rate"] * 100, label="E12 (S5 - Sốc kết hợp toàn diện)", color="#c0392b", lw=2, linestyle="--")
-    ax1.axhline(80, color="orange", linestyle=":", label="Ngưỡng tối ưu U_opt = 80%")
-    ax1.set_ylabel("Utilization Bể (%)", fontsize=10)
-    ax1.set_title("Tỷ lệ Sử dụng Vốn (Utilization) & Lãi suất Kink chạm trần 100%", fontsize=11, fontweight='bold')
-    ax1.legend(loc="lower right")
-
-    # Đồ thị Quy mô tiền rút bị kẹt
-    ax2.plot(e6["step"], e6["pending_withdrawals_usdc"], label="E6: Tiền rút bị kẹt trong Hàng chờ (USDC)", color="#9b59b6", lw=2)
-    ax2.plot(e12["step"], e12["pending_withdrawals_usdc"], label="E12: Tiền rút bị kẹt trong Hàng chờ (USDC)", color="#c0392b", lw=2, linestyle="--")
-    ax2.set_xlabel("Thời gian (Giờ)", fontsize=10)
-    ax2.set_ylabel("USDC kẹt trong Queue", fontsize=10)
-    ax2.set_title("Quy mô Tiền rút bị Kẹt trong Hàng chờ (Withdrawal Queue Congestion)", fontsize=11, fontweight='bold')
-    ax2.legend(loc="upper left")
-
-    plt.suptitle("HÌNH 3. HIỆN TƯỢNG ĐÓNG BĂNG THANH KHOẢN VÀ THÁO CHẠY RÚT VỐN (BANK-RUN)", fontsize=13, fontweight='bold', y=0.99)
-    plt.tight_layout()
-
-    out_path = os.path.join(FIG_DIR, "fig3_withdrawal_queue_bankrun.png")
-    fig.savefig(out_path)
-    plt.close(fig)
-    print(f"✅ Đã tạo: {out_path}")
+    path = os.path.join(RESULTS_DIR, "experiments_E1_E12_timeseries.csv")
+    df = pd.read_csv(path)
+    fig, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+    for exp_id, label, style, marker in [
+        ("E6", "E6 — S2 Adaptive", "-", "o"),
+        ("E12", "E12 — S5 Adaptive", "--", "s"),
+    ]:
+        run = df[df["experiment_id"] == exp_id]
+        axes[0].plot(run["step"], run["utilization_rate"] * 100, label=label,
+                     linestyle=style, color="black", marker=marker, markevery=24, markersize=3)
+        axes[1].plot(run["step"], run["pending_withdrawals_usdc"], label=label,
+                     linestyle=style, color="black", marker=marker, markevery=24, markersize=3)
+    axes[0].axhline(80, color="#555555", linestyle=":", label="Điểm gãy lãi suất: 80%")
+    axes[0].set_ylabel("Utilization (%)")
+    axes[0].set_title("Mức sử dụng vốn")
+    axes[1].set_ylabel("USDC đang chờ rút")
+    axes[1].set_xlabel("Thời gian (giờ)")
+    axes[1].set_title("Khối lượng yêu cầu rút chưa được đáp ứng")
+    for ax in axes:
+        ax.grid(True, color="#bbbbbb", linewidth=0.5)
+        ax.legend()
+    fig.suptitle("Hình 3. Hàng chờ rút tiền trong hai kịch bản thanh khoản", fontsize=12)
+    save_figure(fig, "fig3_withdrawal_queue_bankrun.png")
 
 
-# ==============================================================================
-# HÌNH 4: PHÂN PHỐI XÁC SUẤT MONTE CARLO 1.000 VÒNG LẶP & VaR 95%
-# ==============================================================================
 def plot_monte_carlo_distribution():
-    runs_path = os.path.join(RESULTS_DIR, "monte_carlo_1000_runs.csv")
-    df = pd.read_csv(runs_path)
-
-    # Lọc kịch bản S1
-    s1_data = df[df["scenario"] == "S1"]
-
-    fig, ax = plt.subplots(figsize=(10, 5), dpi=300)
-
-    fixed_s1 = s1_data[s1_data["strategy"] == "Fixed"]["liquidation_rate_pct"]
-    adapt_s1 = s1_data[s1_data["strategy"] == "Adaptive"]["liquidation_rate_pct"]
-
-    sns.kdeplot(fixed_s1, fill=True, color="#e74c3c", alpha=0.4, label="Fixed (Mean: 71.4%, VaR 95: 82.0%)", ax=ax, lw=2)
-    sns.kdeplot(adapt_s1, fill=True, color="#2ecc71", alpha=0.4, label="Adaptive (Mean: 55.2%, VaR 95: 66.0%)", ax=ax, lw=2)
-
-    # Vẽ đường ngấn VaR 95%
-    var95_fixed = fixed_s1.quantile(0.95)
-    var95_adapt = adapt_s1.quantile(0.95)
-
-    ax.axvline(var95_fixed, color="#c0392b", linestyle="--", lw=1.5, label=f"VaR 95% Fixed = {var95_fixed:.1f}%")
-    ax.axvline(var95_adapt, color="#27ae60", linestyle="--", lw=1.5, label=f"VaR 95% Adaptive = {var95_adapt:.1f}%")
-
-    ax.set_title("HÌNH 4. PHÂN PHỐI XÁC SUẤT TỶ LỆ THANH LÝ QUA 1.000 VÒNG LẶP MONTE CARLO (KỊCH BẢN S1)", fontsize=11, fontweight='bold', pad=12)
-    ax.set_xlabel("Tỷ lệ vị thế bị thanh lý (%)", fontsize=10)
-    ax.set_ylabel("Mật độ xác suất (Density)", fontsize=10)
-    ax.legend(loc="upper left")
-    plt.tight_layout()
-
-    out_path = os.path.join(FIG_DIR, "fig4_monte_carlo_1000_distribution.png")
-    fig.savefig(out_path)
-    plt.close(fig)
-    print(f"✅ Đã tạo: {out_path}")
+    path = os.path.join(RESULTS_DIR, "monte_carlo_1000_runs.csv")
+    df = pd.read_csv(path)
+    groups = []
+    labels = []
+    hatches = []
+    for scenario in ["S0", "S1", "S5"]:
+        for strategy in ["Fixed", "Adaptive"]:
+            vals = df.loc[(df["scenario"] == scenario) & (df["strategy"] == strategy), "liquidation_rate_pct"]
+            if vals.empty:
+                continue
+            groups.append(vals.to_numpy())
+            labels.append(f"{scenario}\n{strategy}")
+            hatches.append("///" if strategy == "Fixed" else "...")
+    fig, ax = plt.subplots(figsize=(10, 5.5))
+    boxes = ax.boxplot(groups, patch_artist=True, showmeans=True,
+                       meanprops={"marker": "D", "markerfacecolor": "black", "markeredgecolor": "black"},
+                       medianprops={"color": "black", "linewidth": 1.6},
+                       whiskerprops={"color": "black"}, capprops={"color": "black"},
+                       flierprops={"marker": ".", "markerfacecolor": "#777777", "markeredgecolor": "#777777"})
+    for i, box in enumerate(boxes["boxes"]):
+        box.set(facecolor="white" if i % 2 == 0 else "#dddddd", edgecolor="black", hatch=hatches[i])
+    ax.set_xticks(np.arange(1, len(labels) + 1), labels)
+    ax.set_ylabel("Tỷ lệ thanh lý (%)")
+    ax.set_title("Hình 4. Phân phối tỷ lệ thanh lý qua 1.000 lượt mỗi nhóm")
+    ax.grid(axis="y", color="#bbbbbb", linewidth=0.5)
+    ax.plot([], [], marker="D", color="black", linestyle="none", label="Mean")
+    ax.plot([], [], color="black", linewidth=1.6, label="Median")
+    ax.legend()
+    save_figure(fig, "fig4_monte_carlo_1000_distribution.png")
 
 
-# ==============================================================================
-# HÌNH 5: MÔ HÌNH LÃI SUẤT KINK 2 ĐOẠN (AAVE V3 / BERTUCCI)
-# ==============================================================================
 def plot_kink_model():
-    u_vals = np.linspace(0, 1, 500)
-    base = 0.00
-    slope1 = 0.04
-    slope2 = 0.75
-    u_opt = 0.80
-    reserve_factor = 0.10
+    utilization = np.linspace(0, 1, 500)
+    borrow = np.where(utilization <= 0.8, (utilization / 0.8) * 0.04,
+                      0.04 + ((utilization - 0.8) / 0.2) * 0.75)
+    supply = utilization * borrow * 0.9
+    fig, ax = plt.subplots(figsize=(8.5, 4.7))
+    ax.plot(utilization * 100, borrow * 100, color="black", linewidth=2,
+            label="Lãi suất vay (APR)")
+    ax.plot(utilization * 100, supply * 100, color="#555555", linestyle="--", linewidth=1.8,
+            label="Lãi suất gửi (APR)")
+    ax.axvline(80, color="#777777", linestyle=":", label="Điểm gãy Uopt = 80%")
+    ax.set(title="Hình 5. Đường cong lãi suất Kink", xlabel="Utilization (%)", ylabel="Lãi suất (%/năm)")
+    ax.grid(True, color="#bbbbbb", linewidth=0.5)
+    ax.legend()
+    save_figure(fig, "fig5_kink_interest_rate_curve.png")
 
-    borrow_rates = np.where(
-        u_vals <= u_opt,
-        base + (u_vals / u_opt) * slope1,
-        base + slope1 + ((u_vals - u_opt) / (1.0 - u_opt)) * slope2
-    )
-    supply_rates = u_vals * borrow_rates * (1.0 - reserve_factor)
 
-    fig, ax = plt.subplots(figsize=(8.5, 4.5), dpi=300)
-    ax.plot(u_vals * 100, borrow_rates * 100, color="#d35400", lw=2.5, label="Lãi suất vay (Borrow APR)")
-    ax.plot(u_vals * 100, supply_rates * 100, color="#2980b9", lw=2, linestyle="--", label="Lãi suất gửi (Supply APY)")
-
-    ax.axvline(u_opt * 100, color="gray", linestyle=":", lw=1.2)
-    ax.scatter([u_opt * 100], [(base + slope1) * 100], color="red", s=70, zorder=5)
-    ax.annotate(f"Điểm gãy U_opt = 80%\n(Lãi vay = 4.0% APR)", (u_opt * 100, (base + slope1) * 100),
-                xytext=(u_opt * 100 - 32, (base + slope1) * 100 + 15),
-                arrowprops=dict(facecolor='black', shrink=0.05, width=1, headwidth=6),
-                fontweight='bold', fontsize=9)
-
-    ax.scatter([100], [(base + slope1 + slope2) * 100], color="red", s=70, zorder=5)
-    ax.annotate(f"Chạm trần U = 100%\n(Lãi vay = 79.0% APR)", (100, 79),
-                xytext=(75, 68),
-                arrowprops=dict(facecolor='black', shrink=0.05, width=1, headwidth=6),
-                fontweight='bold', fontsize=9)
-
-    ax.set_title("HÌNH 5. ĐƯỜNG CONG LÃI SUẤT ĐIỂM GÃY (TWO-SLOPE KINK MODEL)", fontsize=11, fontweight='bold', pad=12)
-    ax.set_xlabel("Tỷ lệ Sử dụng Vốn (Utilization Rate, %)", fontsize=10)
-    ax.set_ylabel("Lãi suất (% / Năm)", fontsize=10)
-    ax.legend(loc="upper left")
-    plt.tight_layout()
-
-    out_path = os.path.join(FIG_DIR, "fig5_kink_interest_rate_curve.png")
-    fig.savefig(out_path)
-    plt.close(fig)
-    print(f"✅ Đã tạo: {out_path}")
+def plot_s5_ablation():
+    path = os.path.join(RESULTS_DIR, "ablation_S5_summary.csv")
+    df = pd.read_csv(path)
+    metrics = [
+        ("Tỷ lệ thanh lý (%)", "Tỷ lệ thanh lý (%)"),
+        ("liquidation_coverage_ratio", "Liquidation Coverage Ratio"),
+        ("Rút tiền bị kẹt (USDC)", "USDC kẹt cuối phiên"),
+    ]
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    hatches = ["///", "\\\\", "xx", "..", "++"]
+    for ax, (metric, title) in zip(axes, metrics):
+        bars = ax.bar(df["Mã thực nghiệm"], df[metric], facecolor="white", edgecolor="black")
+        for bar, hatch in zip(bars, hatches):
+            bar.set_hatch(hatch)
+        ax.bar_label(bars, fmt="%.2f", padding=2, fontsize=8)
+        ax.set_title(title)
+        ax.grid(axis="y", color="#bbbbbb", linewidth=0.5)
+    fig.suptitle("Hình 6. So sánh năm cấu hình Ablation trong S5", fontsize=13)
+    fig.text(0.5, 0.015,
+             "A1 All-Fixed   |   A2 Borrower-Adaptive   |   A3 Liquidator-Adaptive   |   A4 Lender-Adaptive   |   A5 All-Adaptive",
+             ha="center", va="bottom", fontsize=9)
+    fig.subplots_adjust(bottom=0.16, top=0.82, wspace=0.32)
+    save_figure(fig, "fig6_s5_ablation.png")
 
 
 if __name__ == "__main__":
@@ -225,4 +198,4 @@ if __name__ == "__main__":
     plot_withdrawal_queue()
     plot_monte_carlo_distribution()
     plot_kink_model()
-    print("🎉 Hoàn tất tạo toàn bộ biểu đồ khoa học dẫn chứng!")
+    plot_s5_ablation()

@@ -7,7 +7,6 @@ Chạy: python -m streamlit run app.py
 
 import os
 import sys
-import time
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -19,6 +18,20 @@ if PROJECT_ROOT not in sys.path:
 
 from abm.model import DeFiLendingMesaModel
 from abm.runner import EXPERIMENTS, run_single_experiment
+
+
+@st.cache_data(show_spinner=False)
+def load_results_csv(path: str, modified_time: float) -> pd.DataFrame:
+    """Cache result tables and invalidate the cache when a CSV is regenerated."""
+    del modified_time
+    return pd.read_csv(path)
+
+
+def read_results(filename: str):
+    path = os.path.join(PROJECT_ROOT, "results", filename)
+    if not os.path.exists(path):
+        return None
+    return load_results_csv(path, os.path.getmtime(path))
 
 st.set_page_config(
     page_title="DeFi Risk Lab — ABM & Smart Contract Simulator",
@@ -48,8 +61,9 @@ with tab1:
     timeseries_file = os.path.join(PROJECT_ROOT, "results", "experiments_E1_E12_timeseries.csv")
 
     if os.path.exists(summary_file):
-        summary_df = pd.read_csv(summary_file)
-        st.dataframe(summary_df, use_container_width=True)
+        summary_df = read_results("experiments_E1_E12_summary.csv")
+        st.dataframe(summary_df, width="stretch", hide_index=True,
+                     alt="Tổng hợp kết quả thực nghiệm E1 đến E12 và các chỉ số rủi ro")
 
         st.markdown("---")
         st.subheader("📈 So sánh Đối chứng Cố định (Fixed) vs Thích nghi (Adaptive)")
@@ -63,7 +77,7 @@ with tab1:
             scen_code = selected_scenario.split(" ")[0]
 
         if os.path.exists(timeseries_file):
-            ts_df = pd.read_csv(timeseries_file)
+            ts_df = read_results("experiments_E1_E12_timeseries.csv")
             subset = ts_df[ts_df["scenario"] == scen_code]
 
             fixed_ts = subset[subset["strategy"] == "fixed"].reset_index(drop=True)
@@ -80,7 +94,8 @@ with tab1:
                 ax.set_ylabel("Utilization (%)")
                 ax.grid(True, alpha=0.3)
                 ax.legend()
-                st.pyplot(fig)
+                st.pyplot(fig, alt=f"Diễn biến utilization của Fixed và Adaptive trong {scen_code}")
+                plt.close(fig)
 
             with col2:
                 fig, ax = plt.subplots(figsize=(8, 4))
@@ -91,18 +106,33 @@ with tab1:
                 ax.set_ylabel("USDC đang kẹt")
                 ax.grid(True, alpha=0.3)
                 ax.legend()
-                st.pyplot(fig)
+                st.pyplot(fig, alt=f"Số tiền rút còn kẹt của Fixed và Adaptive trong {scen_code}")
+                plt.close(fig)
 
         # --- Bổ sung Phần Thống kê Monte Carlo 1.000 Vòng lặp ---
-        mc_summary_path = os.path.join(PROJECT_ROOT, "results", "monte_carlo_1000_summary.csv")
-        if os.path.exists(mc_summary_path):
+        df_mc = read_results("monte_carlo_1000_summary.csv")
+        if df_mc is not None:
             st.markdown("---")
-            st.markdown("### 🎲 Phân phối Xác suất Rủi ro Monte Carlo 1.000 Lần Chạy (Official Benchmarks)")
-            st.markdown("""
-            Theo tiêu chuẩn kiểm định của **Chaudhary & Pinna (2022)** và Bảng tham số v0.1: Chạy **1.000 lần** mô phỏng ngẫu nhiên với hạt giống $Seed = 42 + k$ để tính toán **Độ lệch chuẩn**, **Trung vị** và **Giá trị Chịu rủi ro (VaR 95%)**.
-            """)
-            df_mc = pd.read_csv(mc_summary_path)
-            st.dataframe(df_mc, use_container_width=True)
+            st.markdown("### Monte Carlo: S0, S1 và S5")
+            st.caption("1.000 run cho mỗi cặp kịch bản/chiến lược; seed chạy từ 42 đến 1041. VaR95 là phân vị thực nghiệm 95% của từng chỉ số trong mỗi nhóm.")
+            st.dataframe(df_mc, width="stretch", hide_index=True,
+                         alt="Mean, Median, độ lệch chuẩn và VaR95 của các chỉ số Monte Carlo")
+
+        ablation_df = read_results("ablation_S5_summary.csv")
+        if ablation_df is not None:
+            st.markdown("---")
+            st.markdown("### S5 Ablation Study: A1–A5")
+            st.caption("Cùng seed 42, chỉ thay đổi Fixed/Adaptive của từng nhóm tác nhân.")
+            ablation_columns = [
+                "Mã thực nghiệm", "Ablation", "borrower_strategy", "lender_strategy",
+                "liquidator_strategy", "Tỷ lệ thanh lý (%)", "liquidation_coverage_ratio",
+                "realized_bad_debt_usdc", "unrealized_bad_debt_usdc",
+                "total_bad_debt_exposure_usdc", "Rút tiền bị kẹt (USDC)",
+                "withdrawal_fulfillment_rate",
+            ]
+            ablation_columns = [c for c in ablation_columns if c in ablation_df.columns]
+            st.dataframe(ablation_df[ablation_columns], width="stretch", hide_index=True,
+                         alt="Kết quả năm cấu hình S5 Ablation Study")
     else:
         st.info("Chưa có sẵn file tổng kết kết quả. Vui lòng chạy lệnh: `python abm/runner.py` để tạo dữ liệu!")
 
@@ -126,91 +156,68 @@ with tab2:
 
     mode = st.radio(
         "Chế độ hiển thị:",
-        ["🎬 Xem trực tiếp chuyển động từng giờ (Live Playback)", "⚡ Chạy nhanh lấy toàn bộ kết quả (Instant)"],
+        ["Theo dõi theo giờ (chọn mốc)", "Chạy nhanh toàn bộ 168 giờ"],
         horizontal=True
     )
 
-    if mode == "🎬 Xem trực tiếp chuyển động từng giờ (Live Playback)":
-        speed = st.slider("Tốc độ chuyển động (giây / bước giờ):", min_value=0.01, max_value=0.15, value=0.03, step=0.01)
-        start_btn = st.button("▶ Bắt đầu Mô phỏng Trực tiếp", type="primary")
+    if mode == "Theo dõi theo giờ (chọn mốc)":
+        observed_hour = st.slider("Số giờ đã mô phỏng:", min_value=0, max_value=168, value=168)
+        if st.button("Chạy mô phỏng đến mốc đã chọn", type="primary"):
+            with st.spinner("Đang chạy mô hình đến thời điểm đã chọn..."):
+                model = DeFiLendingMesaModel(
+                    scenario_id=run_scen,
+                    strategy=run_strat.lower(),
+                    num_borrowers=n_borrowers,
+                    seed=int(run_seed)
+                )
+                for _ in range(observed_hour):
+                    model.step()
+                sim_df = model.datacollector.get_model_vars_dataframe()
+                current_step = max(0, observed_hour - 1)
+                cur_price = model.market.get_market_state(current_step)["eth_price"]
+                _, borrow_apr, _ = model.pool.ir_model.compute_rates(
+                    model.pool.total_cash_usdc, model.pool.total_debt_usdc
+                )
+                n_liquidated = model._count_liquidated_borrowers()
+                n_ever = model._count_ever_eligible()
+                coverage = n_liquidated / n_ever if n_ever else 1.0
+                unrealized = model._unrealized_bad_debt_at_price(cur_price)
 
-        if start_btn:
-            model = DeFiLendingMesaModel(
-                scenario_id=run_scen,
-                strategy=run_strat.lower(),
-                num_borrowers=n_borrowers,
-                seed=int(run_seed)
-            )
+            st.success(f"Đã mô phỏng {observed_hour}/168 giờ.")
+            metrics = st.columns(4)
+            metrics[0].metric("Giá ETH", f"${cur_price:,.2f}")
+            metrics[1].metric("Utilization", f"{model.pool.utilization_rate:.1%}", f"Lãi vay {borrow_apr:.2%} APR")
+            metrics[2].metric("Coverage Ratio", f"{coverage:.1%}", f"{n_liquidated}/{n_ever} borrower")
+            metrics[3].metric("Tiền rút còn kẹt", f"${model.pool.total_pending_withdrawals:,.0f} USDC")
+            risk_metrics = st.columns(4)
+            risk_metrics[0].metric("Bad Debt thực hiện", f"${model.pool.total_bad_debt_usdc:,.2f}")
+            risk_metrics[1].metric("Bad Debt tiềm ẩn", f"${unrealized:,.2f}")
+            risk_metrics[2].metric("Fulfillment Rate", f"{model.pool.withdrawal_fulfillment_rate:.1%}")
+            risk_metrics[3].metric("Vị thế HF < 1 hiện tại", str(model._count_undercollateralized()))
 
-            progress_bar = st.progress(0, text="Khởi động môi trường...")
-            metric_box = st.empty()
-            chart_box = st.empty()
-            log_box = st.empty()
-
-            for step_idx in range(168):
-                model.step()
-
-                # Cập nhật giao diện mỗi 2 bước để mượt mà
-                if step_idx % 2 == 0 or step_idx == 167:
-                    pct = (step_idx + 1) / 168.0
-                    progress_bar.progress(pct, text=f"⏳ Đang chạy: Giờ {step_idx + 1}/168 (Ngày {(step_idx)//24 + 1}/7)")
-
-                    # 1. Cập nhật Metrics thời gian thực
-                    cur_state = model.market.get_market_state(step_idx)
-                    cur_p = cur_state["eth_price"]
-                    cur_u = model.pool.utilization_rate * 100.0
-                    _, r_borrow, _ = model.pool.ir_model.compute_rates(model.pool.total_cash_usdc, model.pool.total_debt_usdc)
-                    n_liquidated = sum(1 for b in model.borrowers if b.times_liquidated > 0)
-                    n_undercol = sum(1 for b in model.borrowers if b.debt_usdc > 0 and b.health_factor(cur_p, model.pool.liquidation_threshold) < 1.0)
-                    pending_q = model.pool.total_pending_withdrawals
-
-                    with metric_box.container():
-                        m1, m2, m3, m4 = st.columns(4)
-                        m1.metric("🪙 Giá ETH Hiện Tại", f"${cur_p:,.1f}", f"Giờ {step_idx+1}")
-                        m2.metric("⚠️ Vị thế Dưới chuẩn / Bị TL", f"{n_undercol} nguy hiểm", f"{n_liquidated} đã thanh lý")
-                        m3.metric("🏦 Utilization Bể", f"{cur_u:.1f}%", f"Lãi vay {r_borrow*100:.1f}% APR")
-                        m4.metric("⏳ Hàng chờ Rút kẹt", f"${pending_q:,.0f} USDC", f"{len(model.pool.withdrawal_queue)} yêu cầu")
-
-                    # 2. Cập nhật biểu đồ chuỗi thời gian đến giờ hiện tại
-                    cur_df = model.datacollector.get_model_vars_dataframe()
-                    with chart_box.container():
-                        col_x, col_y = st.columns(2)
-                        with col_x:
-                            fig1, ax1 = plt.subplots(figsize=(6, 2.5))
-                            ax1.plot(cur_df["step"], cur_df["eth_price"], color="#1f77b4", lw=2)
-                            ax1.set_title("Biến động Giá ETH 168 Giờ ($)", fontsize=10)
-                            ax1.set_xlabel("Giờ", fontsize=8)
-                            ax1.grid(True, alpha=0.3)
-                            st.pyplot(fig1)
-                            plt.close(fig1)
-
-                        with col_y:
-                            fig2, ax2 = plt.subplots(figsize=(6, 2.5))
-                            ax2.plot(cur_df["step"], cur_df["total_cash_usdc"], color="green", label="Cash khả dụng", lw=1.5)
-                            ax2.plot(cur_df["step"], cur_df["total_debt_usdc"], color="red", label="Tổng nợ", lw=1.5)
-                            ax2.set_title("Thanh khoản Bể (USDC)", fontsize=10)
-                            ax2.set_xlabel("Giờ", fontsize=8)
-                            ax2.grid(True, alpha=0.3)
-                            ax2.legend(fontsize=8)
-                            st.pyplot(fig2)
-                            plt.close(fig2)
-
-                    # 3. Cập nhật Nhật ký sự kiện trực tiếp
-                    recent_events = model.event_logs[-6:] if hasattr(model, "event_logs") else []
-                    with log_box.container():
-                        st.markdown("**📜 Nhật ký Diễn biến Thời gian thực (Live Event Feed):**")
-                        if recent_events:
-                            for ev in reversed(recent_events):
-                                st.caption(ev)
-                        else:
-                            st.caption("Chưa có sự kiện đột biến trong giờ này...")
-
-                    time.sleep(speed)
-
-            st.success("🎉 Mô phỏng 168 giờ hoàn tất!")
+            chart_columns = st.columns(2)
+            with chart_columns[0]:
+                fig, ax = plt.subplots(figsize=(7, 3.5))
+                ax.plot(sim_df["step"], sim_df["eth_price"], color="black")
+                ax.set(title="Giá ETH", xlabel="Thời gian (giờ)", ylabel="USD")
+                ax.grid(True, alpha=0.3)
+                st.pyplot(fig, alt="Giá ETH từ đầu đến mốc giờ được chọn")
+                plt.close(fig)
+            with chart_columns[1]:
+                fig, ax = plt.subplots(figsize=(7, 3.5))
+                ax.plot(sim_df["step"], sim_df["pending_withdrawals_usdc"], color="black", linestyle="--")
+                ax.set(title="Tiền rút đang chờ", xlabel="Thời gian (giờ)", ylabel="USDC")
+                ax.grid(True, alpha=0.3)
+                st.pyplot(fig, alt="USDC chưa giải ngân trong hàng chờ rút theo thời gian")
+                plt.close(fig)
+            recent_events = model.event_logs[-8:]
+            if recent_events:
+                st.markdown("#### Nhật ký sự kiện gần nhất")
+                for event in reversed(recent_events):
+                    st.caption(event)
 
     else:
-        # Chế độ chạy nhanh
+        # Chạy nhanh toàn bộ mô phỏng
         if st.button("🚀 Chạy Mô phỏng 168 Giờ ngay", type="primary"):
             with st.spinner("Đang tính toán qua Mesa Scheduler..."):
                 cfg = {"exp_id": "CUSTOM", "scenario": run_scen, "strategy": run_strat.lower(), "hyp": "Tùy biến"}
@@ -223,6 +230,13 @@ with tab2:
                 m3.metric("Utilization lớn nhất", f"{summary['Utilization max (%)']}%")
                 m4.metric("Rút tiền bị kẹt", f"${summary['Rút tiền bị kẹt (USDC)']:,} USDC")
 
+                m5, m6, m7, m8 = st.columns(4)
+                m5.metric("Liquidation Coverage Ratio", f"{summary['liquidation_coverage_ratio']:.1%}",
+                          f"{summary['Số Borrower bị TL']}/{summary['n_ever_eligible']} đã thanh lý/từng đủ điều kiện")
+                m6.metric("Bad Debt thực hiện", f"${summary['realized_bad_debt_usdc']:,.2f} USDC")
+                m7.metric("Bad Debt tiềm ẩn", f"${summary['unrealized_bad_debt_usdc']:,.2f} USDC")
+                m8.metric("Withdrawal Fulfillment Rate", f"{summary['withdrawal_fulfillment_rate']:.1%}")
+
                 st.markdown("### 📈 Diễn biến 168 Bước Thời gian")
                 col_a, col_b = st.columns(2)
                 with col_a:
@@ -231,7 +245,7 @@ with tab2:
                     ax1.set_xlabel("Thời gian (Giờ)")
                     ax1.set_ylabel("Giá ETH ($)")
                     ax1.grid(True, alpha=0.3)
-                    st.pyplot(fig)
+                    st.pyplot(fig, alt="Giá ETH trong 168 giờ mô phỏng")
                     plt.close(fig)
 
                 with col_b:
@@ -242,7 +256,7 @@ with tab2:
                     ax2.set_ylabel("USDC")
                     ax2.grid(True, alpha=0.3)
                     ax2.legend()
-                    st.pyplot(fig)
+                    st.pyplot(fig, alt="Cash khả dụng và tổng nợ qua 168 giờ")
                     plt.close(fig)
 
 

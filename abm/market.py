@@ -47,7 +47,8 @@ class MarketEnvironment:
             returns = np.random.normal(0.0, 0.03, 168)
             self.raw_prices = base_price * np.exp(np.cumsum(returns))
 
-        # Thiết lập các kịch bản S0 - S5
+        # S0 is deliberately independent from the historical crash path.
+        # S1/S5 retain the selected historical path and apply the configured shock.
         self.prices, self.gas_fees, self.slippage_s, self.slippage_v = self._build_scenario_curves()
 
     def _build_scenario_curves(self):
@@ -59,7 +60,13 @@ class MarketEnvironment:
         slippage_s = np.full(168, 1.0)           # s = 1.0
         slippage_v = np.full(168, 1_000_000_000.0) # V = 1 tỷ USD
 
-        # S0: Cơ sở (Baseline) - Giữ nguyên đường giá lịch sử
+        # S0: stable baseline, deterministic for a given seed and bounded to +/-5%.
+        if self.scenario_id == "S0":
+            rng = np.random.default_rng(self.seed)
+            hourly_returns = rng.normal(0.0, 0.003, 168)
+            hourly_returns[0] = 0.0
+            relative_path = np.clip(np.cumsum(hourly_returns), -0.05, 0.05)
+            prices = self.base_price * (1.0 + relative_path)
 
         # S1: Cú sốc giá - Giảm 43% trong 24 bước từ bước 24
         if self.scenario_id in ["S1", "S5"]:

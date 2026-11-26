@@ -8,7 +8,7 @@ import pandas as pd
 from abm.market import MarketEnvironment
 from abm.protocol import ProtocolPool, KinkInterestRateModel
 from abm.model import DeFiLendingMesaModel
-from abm.runner import run_single_experiment, EXPERIMENTS
+from abm.runner import run_single_experiment, EXPERIMENTS, run_s5_ablation_study
 
 
 def test_market_environment_initialization():
@@ -16,11 +16,15 @@ def test_market_environment_initialization():
     assert len(m.prices) == 168
     assert len(m.gas_fees) == 168
     assert m.prices[0] > 0
+    assert m.prices.min() >= 1900.0
+    assert m.prices.max() <= 2100.0
+    assert (m.prices == MarketEnvironment(scenario_id="S0", base_price=2000.0).prices).all()
 
     # S1 price shock: price drops significantly
     m1 = MarketEnvironment(scenario_id="S1", base_price=2000.0)
     assert m1.prices[48] < m1.prices[24]
     assert pytest.approx(m1.prices[48] / m1.prices[24], 0.05) == 0.57
+    assert m1.prices.min() < m.prices.min() * 0.75
 
 
 def test_kink_interest_rate_model():
@@ -77,3 +81,68 @@ def test_runner_single_experiment():
     assert summary["Mã thực nghiệm"] == "E1"
     assert len(df) == 169 # t=0 to 168
     assert "experiment_id" in df.columns
+    assert summary["n_ever_eligible"] >= summary["Số Borrower bị TL"]
+    assert 0.0 <= summary["liquidation_coverage_ratio"] <= 1.0
+    assert "unrealized_bad_debt_peak_usdc" in summary
+    assert "withdrawal_fulfillment_rate" in summary
+    assert "avg_all_wait_h" in summary
+
+
+def test_s3_exogenous_borrow_demand_does_not_inflate_borrower_principal():
+    model = DeFiLendingMesaModel(
+        scenario_id="S3", strategy="fixed", num_borrowers=10,
+        num_lenders=5, num_liquidators=2, seed=42
+    )
+    starting_debts = [b.debt_usdc for b in model.borrowers]
+    for _ in range(36):
+        model.step()
+
+    assert model.pool.exogenous_debt_usdc > 0
+    assert model.pool.utilization_rate > 0.80
+    # Existing borrowers accrue hourly interest only; external demand is not
+    # allocated to their accounts as additional principal.
+    assert all(b.debt_usdc < initial * 1.02 for b, initial in zip(model.borrowers, starting_debts))
+
+
+def test_withdrawal_metrics_include_pending_requests_at_horizon():
+    pool = ProtocolPool()
+    pool.total_cash_usdc = 0.0
+    pool.total_supply_usdc = 100.0
+    pool.queue_withdrawal(lender_id=1, amount=40.0, current_step=10)
+
+    assert pool.total_withdrawal_requested_usdc == 40.0
+    assert pool.total_withdrawal_fulfilled_usdc == 0.0
+    assert pool.withdrawal_fulfillment_rate == 0.0
+    assert pool.average_fulfilled_withdrawal_delay() == 0.0
+    assert pool.average_all_queued_withdrawal_wait(168) == 158.0
+
+    pool.total_cash_usdc = 40.0
+    pool.process_withdrawal_queue(current_step=168, lenders_dict={})
+    assert pool.withdrawal_fulfillment_rate == 1.0
+    assert pool.average_fulfilled_withdrawal_delay() == 158.0
+    assert pool.average_all_queued_withdrawal_wait(168) == 158.0
+
+
+def test_risk_metrics_track_ever_eligible_and_unliquidated_debt():
+    model = DeFiLendingMesaModel(
+        scenario_id="S0", strategy="fixed", num_borrowers=5,
+        num_lenders=2, num_liquidators=1, seed=42
+    )
+    model._mark_ever_undercollateralized(eth_price=1.0)
+    assert model._count_ever_eligible() == 5
+    model.market.prices[0] = 1.0
+    metrics = model.final_risk_metrics(final_step=0)
+    assert metrics["n_ever_eligible"] == 5
+    assert metrics["unliquidated_positions_end"] == 5
+    assert metrics["unliquidated_debt_at_risk_usdc"] > 0
+    assert metrics["unrealized_bad_debt_usdc"] > 0
+    assert metrics["total_bad_debt_exposure_usdc"] >= metrics["realized_bad_debt_usdc"]
+
+
+def test_s5_ablation_study_has_five_independent_strategy_configs():
+    summary, timeseries = run_s5_ablation_study(num_borrowers=4, seed=42, verbose=False, save=False)
+    assert summary["Mã thực nghiệm"].tolist() == ["A1", "A2", "A3", "A4", "A5"]
+    assert len(timeseries["ablation_id"].unique()) == 5
+    assert summary.loc[summary["Mã thực nghiệm"] == "A2", "borrower_strategy"].iloc[0] == "adaptive"
+    assert summary.loc[summary["Mã thực nghiệm"] == "A2", "lender_strategy"].iloc[0] == "fixed"
+    assert summary.loc[summary["Mã thực nghiệm"] == "A3", "liquidator_strategy"].iloc[0] == "adaptive"

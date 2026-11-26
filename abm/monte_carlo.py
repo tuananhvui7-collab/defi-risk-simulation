@@ -36,6 +36,7 @@ def _single_mc_worker(args: tuple) -> dict:
     df = model.run_simulation(steps=168)
 
     final = df.iloc[-1]
+    risk = model.final_risk_metrics(final_step=model.max_steps)
     n_liq = int(final["n_liquidated_total"])
     liq_rate = (n_liq / num_borrowers) * 100.0
     bad_debt = float(final["total_bad_debt_usdc"])
@@ -49,14 +50,50 @@ def _single_mc_worker(args: tuple) -> dict:
         "scenario": scenario_id,
         "strategy": strategy.capitalize(),
         "seed": seed,
-        "liquidation_rate_pct": round(liq_rate, 2),
+        "liquidation_rate_pct": liq_rate,
         "num_liquidated": n_liq,
-        "bad_debt_usdc": round(bad_debt, 2),
-        "max_utilization_pct": round(max_u, 2),
-        "max_borrow_apr_pct": round(max_apr, 2),
-        "max_pending_withdrawals_usdc": round(max_pending_q, 2),
-        "liquidator_profit_usd": round(liq_profit, 2)
+        "bad_debt_usdc": bad_debt,
+        "realized_bad_debt_usdc": risk["realized_bad_debt_usdc"],
+        "unrealized_bad_debt_usdc": risk["unrealized_bad_debt_usdc"],
+        "unrealized_bad_debt_peak_usdc": risk["unrealized_bad_debt_peak_usdc"],
+        "total_bad_debt_exposure_usdc": risk["total_bad_debt_exposure_usdc"],
+        "max_utilization_pct": max_u,
+        "max_borrow_apr_pct": max_apr,
+        "max_pending_withdrawals_usdc": max_pending_q,
+        "pending_withdrawals_usdc": float(model.pool.total_pending_withdrawals),
+        "withdrawal_fulfillment_rate": risk["withdrawal_fulfillment_rate"],
+        "n_ever_eligible": risk["n_ever_eligible"],
+        "liquidation_coverage_ratio": risk["liquidation_coverage_ratio"],
+        "liquidator_profit_usd": liq_profit
     }
+
+
+MC_METRICS = {
+    "liquidation_rate_pct": "Tỷ lệ thanh lý (%)",
+    "liquidation_coverage_ratio": "Liquidation Coverage Ratio",
+    "total_bad_debt_exposure_usdc": "Tổng Bad Debt Exposure (USDC)",
+    "pending_withdrawals_usdc": "Tiền rút bị kẹt (USDC)",
+    "withdrawal_fulfillment_rate": "Withdrawal Fulfillment Rate",
+}
+
+
+def summarize_monte_carlo(df_runs: pd.DataFrame) -> pd.DataFrame:
+    """Compute empirical mean, median, sample std, and 95th percentile per group."""
+    rows = []
+    for (scenario, strategy), group in df_runs.groupby(["scenario", "strategy"], sort=True):
+        row = {"Kịch bản": scenario, "Chiến lược": strategy, "Số lần chạy (N)": len(group)}
+        for column in MC_METRICS:
+            values = group[column]
+            row[f"{column}_mean"] = values.mean()
+            row[f"{column}_median"] = values.median()
+            row[f"{column}_std"] = values.std(ddof=1)
+            row[f"{column}_var95"] = values.quantile(0.95)
+        # Retain commonly used diagnostics from previous summary files.
+        row["Utilization Max TB (%)"] = group["max_utilization_pct"].mean()
+        row["Lãi vay Max TB (% APR)"] = group["max_borrow_apr_pct"].mean()
+        row["Lợi nhuận Liquidator TB ($)"] = group["liquidator_profit_usd"].mean()
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 
 def run_monte_carlo(
@@ -69,12 +106,12 @@ def run_monte_carlo(
 ) -> tuple:
     """
     Chạy Monte Carlo n_runs lần cho các kịch bản và chiến lược chỉ định.
-    Mặc định: Chạy kịch bản trọng tâm S1 (Sốc giá) và S5 (Sốc kết hợp)
+    Mặc định: Chạy S0 (Baseline), S1 (Sốc giá) và S5 (Sốc kết hợp)
     so sánh giữa Fixed và Adaptive qua 1.000 vòng lặp.
     """
     os.makedirs(RESULTS_DIR, exist_ok=True)
     if scenarios is None:
-        scenarios = ["S1", "S5"]
+        scenarios = ["S0", "S1", "S5"]
     if strategies is None:
         strategies = ["fixed", "adaptive"]
 
@@ -101,8 +138,9 @@ def run_monte_carlo(
             if max_workers == 1:
                 batch_res = [_single_mc_worker(t) for t in tasks]
             else:
-                with ProcessPoolExecutor(max_workers=max_workers) as executor:
-                    batch_res = list(executor.map(_single_mc_worker, tasks))
+                workers = max_workers if max_workers is not None else min(os.cpu_count() or 1, 8)
+                with ProcessPoolExecutor(max_workers=workers) as executor:
+                    batch_res = list(executor.map(_single_mc_worker, tasks, chunksize=20))
 
             all_results.extend(batch_res)
             sub_elapsed = time.time() - sub_t0
@@ -115,25 +153,8 @@ def run_monte_carlo(
     runs_file = os.path.join(RESULTS_DIR, f"monte_carlo_{n_runs}_runs.csv")
     df_runs.to_csv(runs_file, index=False, encoding="utf-8-sig")
 
-    # Tính toán bảng phân phối thống kê & Value at Risk (VaR)
-    summary_rows = []
-    for (scen, strat), grp in df_runs.groupby(["scenario", "strategy"]):
-        summary_rows.append({
-            "Kịch bản": scen,
-            "Chiến lược": strat,
-            "Số lần chạy (N)": len(grp),
-            "Tỷ lệ TL TB (%)": round(grp["liquidation_rate_pct"].mean(), 2),
-            "Tỷ lệ TL Trung vị (%)": round(grp["liquidation_rate_pct"].median(), 2),
-            "Độ lệch chuẩn TL (%)": round(grp["liquidation_rate_pct"].std(), 2),
-            "Tỷ lệ TL 95% (VaR 95)": round(grp["liquidation_rate_pct"].quantile(0.95), 2),
-            "Tỷ lệ TL Max (%)": round(grp["liquidation_rate_pct"].max(), 2),
-            "Utilization Max TB (%)": round(grp["max_utilization_pct"].mean(), 2),
-            "Lãi vay Max TB (% APR)": round(grp["max_borrow_apr_pct"].mean(), 2),
-            "Rút tiền kẹt TB (USDC)": round(grp["max_pending_withdrawals_usdc"].mean(), 2),
-            "Lợi nhuận Liquidator TB ($)": round(grp["liquidator_profit_usd"].mean(), 2)
-        })
-
-    df_summary = pd.DataFrame(summary_rows)
+    # The VaR field is the empirical 95th percentile of each run-level metric.
+    df_summary = summarize_monte_carlo(df_runs)
     summary_file = os.path.join(RESULTS_DIR, f"monte_carlo_{n_runs}_summary.csv")
     df_summary.to_csv(summary_file, index=False, encoding="utf-8-sig")
 
@@ -148,4 +169,4 @@ def run_monte_carlo(
 
 
 if __name__ == "__main__":
-    run_monte_carlo(n_runs=1000, scenarios=["S1", "S5"], strategies=["fixed", "adaptive"], num_borrowers=50)
+    run_monte_carlo(n_runs=1000, scenarios=["S0", "S1", "S5"], strategies=["fixed", "adaptive"], num_borrowers=50)

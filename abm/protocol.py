@@ -80,6 +80,8 @@ class ProtocolPool:
         # Tổng hợp số dư của giao thức
         self.total_collateral_eth = 0.0
         self.total_debt_usdc = 0.0
+        # Debt demand without a modeled borrower/collateral position (e.g. S3).
+        self.exogenous_debt_usdc = 0.0
         self.total_supply_usdc = 0.0
         self.total_cash_usdc = 0.0
         self.total_bad_debt_usdc = 0.0
@@ -89,6 +91,11 @@ class ProtocolPool:
         self.total_pending_withdrawals = 0.0
         self.completed_withdrawals_count = 0
         self.total_withdrawal_delay_steps = 0
+        self.total_withdrawal_requested_usdc = 0.0
+        self.total_withdrawal_fulfilled_usdc = 0.0
+        self.queued_withdrawal_requests_count = 0
+        self.completed_queued_withdrawals_count = 0
+        self.total_queued_withdrawal_delay_steps = 0
 
     @property
     def utilization_rate(self) -> float:
@@ -105,6 +112,7 @@ class ProtocolPool:
         # Lãi nợ phát sinh
         debt_interest = self.total_debt_usdc * (r_borrow * dt_year)
         self.total_debt_usdc += debt_interest
+        self.exogenous_debt_usdc += self.exogenous_debt_usdc * (r_borrow * dt_year)
 
         # Lãi tiền gửi phát sinh
         supply_interest = self.total_supply_usdc * (r_supply * dt_year)
@@ -112,12 +120,23 @@ class ProtocolPool:
 
         return u, r_borrow, r_supply
 
+    def add_exogenous_borrow_demand(self, amount: float) -> float:
+        """Move available cash into uncollateralized external debt demand."""
+        actual = min(max(0.0, amount), max(0.0, self.total_cash_usdc))
+        if actual:
+            self.total_cash_usdc -= actual
+            self.total_debt_usdc += actual
+            self.exogenous_debt_usdc += actual
+        return actual
+
     def queue_withdrawal(self, lender_id: int, amount: float, current_step: int) -> float:
         """
         Xử lý yêu cầu rút tiền của Lender:
         - Đáp ứng tối đa bằng cash khả dụng (sau khi trừ dự trữ tối thiểu).
         - Phần thiếu hụt xếp vào hàng chờ.
         """
+        amount = max(0.0, float(amount))
+        self.total_withdrawal_requested_usdc += amount
         min_reserve = self.total_supply_usdc * self.min_liquidity_reserve_pct
         available_cash = max(0.0, self.total_cash_usdc - min_reserve)
 
@@ -125,6 +144,7 @@ class ProtocolPool:
             # Đáp ứng đủ 100% ngay lập tức
             self.total_cash_usdc -= amount
             self.total_supply_usdc -= amount
+            self.total_withdrawal_fulfilled_usdc += amount
             self.completed_withdrawals_count += 1
             return amount
         else:
@@ -134,11 +154,13 @@ class ProtocolPool:
             
             self.total_cash_usdc -= fulfilled
             self.total_supply_usdc -= fulfilled
+            self.total_withdrawal_fulfilled_usdc += fulfilled
 
             # Đưa phần còn lại vào queue
             req = WithdrawalRequest(lender_id=lender_id, amount_usdc=unfulfilled, requested_step=current_step)
             self.withdrawal_queue.append(req)
             self.total_pending_withdrawals += unfulfilled
+            self.queued_withdrawal_requests_count += 1
             return fulfilled
 
     def process_withdrawal_queue(self, current_step: int, lenders_dict: Dict[int, Any]):
@@ -155,10 +177,13 @@ class ProtocolPool:
                 self.total_cash_usdc -= payout
                 self.total_supply_usdc -= payout
                 available_cash -= payout
-                self.total_pending_withdrawals -= payout
+                self.total_pending_withdrawals = max(0.0, self.total_pending_withdrawals - payout)
+                self.total_withdrawal_fulfilled_usdc += payout
 
                 delay = current_step - req.requested_step
                 self.total_withdrawal_delay_steps += delay
+                self.total_queued_withdrawal_delay_steps += delay
+                self.completed_queued_withdrawals_count += 1
                 self.completed_withdrawals_count += 1
 
                 # Cập nhật số dư lender
@@ -171,12 +196,32 @@ class ProtocolPool:
                 self.total_cash_usdc -= payout
                 self.total_supply_usdc -= payout
                 req.amount_usdc -= payout
-                self.total_pending_withdrawals -= payout
+                self.total_pending_withdrawals = max(0.0, self.total_pending_withdrawals - payout)
+                self.total_withdrawal_fulfilled_usdc += payout
                 available_cash = 0.0
 
                 if req.lender_id in lenders_dict:
                     lenders_dict[req.lender_id].pending_withdrawal -= payout
                 break
+
+    @property
+    def withdrawal_fulfillment_rate(self) -> float:
+        if self.total_withdrawal_requested_usdc <= 0:
+            return 1.0
+        return min(1.0, self.total_withdrawal_fulfilled_usdc / self.total_withdrawal_requested_usdc)
+
+    def average_fulfilled_withdrawal_delay(self) -> float:
+        if self.completed_withdrawals_count == 0:
+            return 0.0
+        return self.total_withdrawal_delay_steps / self.completed_withdrawals_count
+
+    def average_all_queued_withdrawal_wait(self, current_step: int) -> float:
+        """Average wait for every request that entered the queue, including pending requests."""
+        if self.queued_withdrawal_requests_count == 0:
+            return 0.0
+        pending_wait = sum(max(0, current_step - req.requested_step) for req in self.withdrawal_queue)
+        total_wait = self.total_queued_withdrawal_delay_steps + pending_wait
+        return total_wait / self.queued_withdrawal_requests_count
 
     def socialize_bad_debt(self, bad_debt_amount: float, lenders_dict: Dict[int, Any]):
         """

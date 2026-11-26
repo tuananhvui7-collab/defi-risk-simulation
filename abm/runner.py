@@ -42,7 +42,10 @@ def run_single_experiment(exp_config: dict, num_borrowers: int = 100, seed: int 
         scenario_id=exp_config["scenario"],
         strategy=exp_config["strategy"],
         num_borrowers=num_borrowers,
-        seed=seed
+        seed=seed,
+        borrower_strategy=exp_config.get("borrower_strategy"),
+        lender_strategy=exp_config.get("lender_strategy"),
+        liquidator_strategy=exp_config.get("liquidator_strategy")
     )
     df = model.run_simulation(steps=168)
 
@@ -57,6 +60,7 @@ def run_single_experiment(exp_config: dict, num_borrowers: int = 100, seed: int 
     pending_withdrawals = final_step["pending_withdrawals_usdc"]
     avg_delay = final_step["avg_withdrawal_delay_hours"]
     liq_profit = final_step["total_liquidator_profit"]
+    risk_metrics = model.final_risk_metrics(final_step=model.max_steps)
 
     # Tổng kết
     summary = {
@@ -71,6 +75,19 @@ def run_single_experiment(exp_config: dict, num_borrowers: int = 100, seed: int 
         "Cash khả dụng TB (USDC)": round(avg_cash, 2),
         "Rút tiền bị kẹt (USDC)": round(pending_withdrawals, 2),
         "Độ trễ rút TB (giờ)": round(avg_delay, 2),
+        "avg_fulfilled_delay_h": round(risk_metrics["avg_fulfilled_delay_h"], 4),
+        "avg_all_wait_h": round(risk_metrics["avg_all_wait_h"], 4),
+        "withdrawal_fulfillment_rate": round(risk_metrics["withdrawal_fulfillment_rate"], 6),
+        "n_ever_eligible": risk_metrics["n_ever_eligible"],
+        "liquidation_coverage_ratio": round(risk_metrics["liquidation_coverage_ratio"], 6),
+        "unliquidated_positions_end": risk_metrics["unliquidated_positions_end"],
+        "unliquidated_debt_at_risk_usdc": round(risk_metrics["unliquidated_debt_at_risk_usdc"], 2),
+        "realized_bad_debt_usdc": round(risk_metrics["realized_bad_debt_usdc"], 2),
+        "unrealized_bad_debt_usdc": round(risk_metrics["unrealized_bad_debt_usdc"], 2),
+        "unrealized_bad_debt_peak_usdc": round(risk_metrics["unrealized_bad_debt_peak_usdc"], 2),
+        "total_bad_debt_exposure_usdc": round(risk_metrics["total_bad_debt_exposure_usdc"], 2),
+        "total_bad_debt_exposure_peak_usdc": round(risk_metrics["total_bad_debt_exposure_peak_usdc"], 2),
+        "exogenous_debt_usdc": round(float(final_step["exogenous_debt_usdc"]), 2),
         "Lợi nhuận Liquidator ($)": round(liq_profit, 2),
         "Mục đích kiểm chứng": exp_config["hyp"]
     }
@@ -80,6 +97,55 @@ def run_single_experiment(exp_config: dict, num_borrowers: int = 100, seed: int 
     df["strategy"] = exp_config["strategy"]
 
     return summary, df
+
+
+S5_ABLATION_CONFIGS = [
+    {"exp_id": "A1", "name": "All-Fixed", "borrower_strategy": "fixed", "lender_strategy": "fixed", "liquidator_strategy": "fixed"},
+    {"exp_id": "A2", "name": "Borrower-Adaptive only", "borrower_strategy": "adaptive", "lender_strategy": "fixed", "liquidator_strategy": "fixed"},
+    {"exp_id": "A3", "name": "Liquidator-Adaptive only", "borrower_strategy": "fixed", "lender_strategy": "fixed", "liquidator_strategy": "adaptive"},
+    {"exp_id": "A4", "name": "Lender-Adaptive only", "borrower_strategy": "fixed", "lender_strategy": "adaptive", "liquidator_strategy": "fixed"},
+    {"exp_id": "A5", "name": "All-Adaptive", "borrower_strategy": "adaptive", "lender_strategy": "adaptive", "liquidator_strategy": "adaptive"},
+]
+
+
+def run_s5_ablation_study(
+    num_borrowers: int = 100,
+    seed: int = 42,
+    verbose: bool = True,
+    save: bool = True
+) -> tuple:
+    """Run five S5 strategy ablations with a shared random seed."""
+    summaries = []
+    timeseries = []
+    for config in S5_ABLATION_CONFIGS:
+        exp = {
+            "exp_id": config["exp_id"],
+            "scenario": "S5",
+            "strategy": "mixed",
+            "desc": config["name"],
+            "hyp": "S5 ablation study",
+            **{key: config[key] for key in ("borrower_strategy", "lender_strategy", "liquidator_strategy")}
+        }
+        summary, df = run_single_experiment(exp, num_borrowers=num_borrowers, seed=seed)
+        summary["Ablation"] = config["name"]
+        summary["borrower_strategy"] = config["borrower_strategy"]
+        summary["lender_strategy"] = config["lender_strategy"]
+        summary["liquidator_strategy"] = config["liquidator_strategy"]
+        df["ablation_id"] = config["exp_id"]
+        for key in ("borrower_strategy", "lender_strategy", "liquidator_strategy"):
+            df[key] = config[key]
+        summaries.append(summary)
+        timeseries.append(df)
+        if verbose:
+            print(f"{config['exp_id']} {config['name']}: {summary['Tỷ lệ thanh lý (%)']}% liquidated")
+
+    summary_df = pd.DataFrame(summaries)
+    timeseries_df = pd.concat(timeseries, ignore_index=True)
+    if save:
+        os.makedirs(RESULTS_DIR, exist_ok=True)
+        summary_df.to_csv(os.path.join(RESULTS_DIR, "ablation_S5_summary.csv"), index=False, encoding="utf-8-sig")
+        timeseries_df.to_csv(os.path.join(RESULTS_DIR, "ablation_S5_timeseries.csv"), index=False, encoding="utf-8-sig")
+    return summary_df, timeseries_df
 
 
 def run_all_experiments(num_borrowers: int = 100, seed: int = 42, verbose: bool = True) -> tuple:

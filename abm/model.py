@@ -41,11 +41,17 @@ class DeFiLendingMesaModel(mesa.Model):
         min_liquidity_reserve_pct: float = 0.0,
         h_fixed: float = 1.10,
         seed: int = 42,
-        historical_csv: str = "eth_usdt_168h_active.csv"
+        historical_csv: str = "eth_usdt_168h_active.csv",
+        borrower_strategy: str = None,
+        lender_strategy: str = None,
+        liquidator_strategy: str = None
     ):
         super().__init__(seed=seed)
         self.scenario_id = scenario_id
         self.strategy = strategy.lower()
+        self.borrower_strategy = (borrower_strategy or self.strategy).lower()
+        self.lender_strategy = (lender_strategy or self.strategy).lower()
+        self.liquidator_strategy = (liquidator_strategy or self.strategy).lower()
         self.num_borrowers = num_borrowers
         self.num_lenders = num_lenders
         self.num_liquidators = num_liquidators
@@ -105,7 +111,7 @@ class DeFiLendingMesaModel(mesa.Model):
                 collateral_eth=col_eth,
                 debt_usdc=d,
                 risk_appetite=ra,
-                strategy=self.strategy,
+                strategy=self.borrower_strategy,
                 h_fixed=h_fixed
             )
             self.borrowers.append(b)
@@ -129,7 +135,7 @@ class DeFiLendingMesaModel(mesa.Model):
                 model=self,
                 deposited_usdc=lender_deposit_each,
                 risk_appetite=ra,
-                strategy=self.strategy
+                strategy=self.lender_strategy
             )
             self.lenders.append(l)
             self.lenders_dict[l.unique_id] = l
@@ -149,9 +155,14 @@ class DeFiLendingMesaModel(mesa.Model):
                 model=self,
                 capital_usdc=capital_each,
                 risk_appetite=ra,
-                strategy=self.strategy
+                strategy=self.liquidator_strategy
             )
             self.liquidators.append(liq)
+
+        self.max_unrealized_bad_debt_usdc = 0.0
+        self.max_total_bad_debt_exposure_usdc = 0.0
+        self._mark_ever_undercollateralized(p0)
+        self._update_unrealized_bad_debt(p0)
 
         # 6. Thiết lập DataCollector để thu thập dữ liệu chuỗi thời gian
         self.datacollector = mesa.DataCollector(
@@ -166,13 +177,27 @@ class DeFiLendingMesaModel(mesa.Model):
                 "total_cash_usdc": lambda m: m.pool.total_cash_usdc,
                 "total_supply_usdc": lambda m: m.pool.total_supply_usdc,
                 "total_bad_debt_usdc": lambda m: m.pool.total_bad_debt_usdc,
+                "exogenous_debt_usdc": lambda m: m.pool.exogenous_debt_usdc,
                 "total_collateral_eth": lambda m: m.pool.total_collateral_eth,
                 "n_undercollateralized": self._count_undercollateralized,
+                "n_ever_eligible": self._count_ever_eligible,
                 "n_liquidated_total": self._count_liquidated_borrowers,
+                "liquidation_coverage_ratio": self._liquidation_coverage_ratio,
+                "unliquidated_positions_end": self._count_unliquidated_undercollateralized,
+                "unliquidated_debt_at_risk_usdc": self._unliquidated_debt_at_risk,
+                "unrealized_bad_debt_usdc": self._unrealized_bad_debt_at_price,
+                "unrealized_bad_debt_peak_usdc": lambda m: m.max_unrealized_bad_debt_usdc,
+                "total_bad_debt_exposure_usdc": self._total_bad_debt_exposure,
+                "total_bad_debt_exposure_peak_usdc": lambda m: m.max_total_bad_debt_exposure_usdc,
                 "withdrawal_queue_len": lambda m: len(m.pool.withdrawal_queue),
                 "pending_withdrawals_usdc": lambda m: m.pool.total_pending_withdrawals,
                 "completed_withdrawals_count": lambda m: m.pool.completed_withdrawals_count,
                 "avg_withdrawal_delay_hours": self._calc_avg_withdrawal_delay,
+                "avg_fulfilled_delay_h": self._calc_avg_withdrawal_delay,
+                "avg_all_wait_h": lambda m: m.pool.average_all_queued_withdrawal_wait(m.current_step),
+                "withdrawal_fulfillment_rate": lambda m: m.pool.withdrawal_fulfillment_rate,
+                "total_withdrawal_requested_usdc": lambda m: m.pool.total_withdrawal_requested_usdc,
+                "total_withdrawal_fulfilled_usdc": lambda m: m.pool.total_withdrawal_fulfilled_usdc,
                 "total_liquidator_profit": lambda m: sum(liq.total_profit_usd for liq in m.liquidators),
             }
         )
@@ -185,13 +210,86 @@ class DeFiLendingMesaModel(mesa.Model):
         lt = self.pool.liquidation_threshold
         return sum(1 for b in self.borrowers if b.debt_usdc > 0 and b.health_factor(p, lt) < 1.0)
 
+    def _mark_ever_undercollateralized(self, eth_price: float):
+        lt = self.pool.liquidation_threshold
+        for borrower in self.borrowers:
+            if borrower.debt_usdc > 0 and borrower.health_factor(eth_price, lt) < 1.0:
+                borrower.ever_undercollateralized = True
+
+    def _count_ever_eligible(self) -> int:
+        return sum(1 for borrower in self.borrowers if borrower.ever_undercollateralized)
+
     def _count_liquidated_borrowers(self) -> int:
         return sum(1 for b in self.borrowers if b.times_liquidated > 0)
 
+    def _liquidation_coverage_ratio(self) -> float:
+        eligible = self._count_ever_eligible()
+        return self._count_liquidated_borrowers() / eligible if eligible else 1.0
+
+    def _count_unliquidated_undercollateralized(self) -> int:
+        price = self.market.get_market_state(self.current_step)["eth_price"]
+        lt = self.pool.liquidation_threshold
+        return sum(1 for b in self.borrowers if b.debt_usdc > 0 and b.health_factor(price, lt) < 1.0)
+
+    def _unliquidated_debt_at_risk(self) -> float:
+        price = self.market.get_market_state(self.current_step)["eth_price"]
+        lt = self.pool.liquidation_threshold
+        return sum(
+            b.debt_usdc for b in self.borrowers
+            if b.debt_usdc > 0 and b.health_factor(price, lt) < 1.0
+        )
+
+    def _unrealized_bad_debt_at_price(self, price: float = None) -> float:
+        if price is None:
+            price = self.market.get_market_state(self.current_step)["eth_price"]
+        return sum(
+            max(0.0, b.debt_usdc - b.collateral_eth * price)
+            for b in self.borrowers if b.debt_usdc > 0
+        )
+
+    def _update_unrealized_bad_debt(self, price: float):
+        self.max_unrealized_bad_debt_usdc = max(
+            self.max_unrealized_bad_debt_usdc,
+            self._unrealized_bad_debt_at_price(price)
+        )
+        self.max_total_bad_debt_exposure_usdc = max(
+            self.max_total_bad_debt_exposure_usdc,
+            self.pool.total_bad_debt_usdc + self._unrealized_bad_debt_at_price(price)
+        )
+
+    def _total_bad_debt_exposure(self) -> float:
+        return self.pool.total_bad_debt_usdc + self._unrealized_bad_debt_at_price()
+
+    def final_risk_metrics(self, final_step: int = None) -> dict:
+        """Return end-of-horizon risk and withdrawal metrics."""
+        step = self.current_step if final_step is None else final_step
+        price = self.market.get_market_state(step)["eth_price"]
+        lt = self.pool.liquidation_threshold
+        unliquidated = [
+            b for b in self.borrowers
+            if b.debt_usdc > 0 and b.health_factor(price, lt) < 1.0
+        ]
+        n_ever = self._count_ever_eligible()
+        n_liquidated = self._count_liquidated_borrowers()
+        unrealized = self._unrealized_bad_debt_at_price(price)
+        realized = self.pool.total_bad_debt_usdc
+        return {
+            "n_ever_eligible": n_ever,
+            "liquidation_coverage_ratio": n_liquidated / n_ever if n_ever else 1.0,
+            "unliquidated_positions_end": len(unliquidated),
+            "unliquidated_debt_at_risk_usdc": sum(b.debt_usdc for b in unliquidated),
+            "realized_bad_debt_usdc": realized,
+            "unrealized_bad_debt_usdc": unrealized,
+            "unrealized_bad_debt_peak_usdc": self.max_unrealized_bad_debt_usdc,
+            "total_bad_debt_exposure_usdc": realized + unrealized,
+            "total_bad_debt_exposure_peak_usdc": self.max_total_bad_debt_exposure_usdc,
+            "withdrawal_fulfillment_rate": self.pool.withdrawal_fulfillment_rate,
+            "avg_fulfilled_delay_h": self._calc_avg_withdrawal_delay(),
+            "avg_all_wait_h": self.pool.average_all_queued_withdrawal_wait(step),
+        }
+
     def _calc_avg_withdrawal_delay(self) -> float:
-        if self.pool.completed_withdrawals_count == 0:
-            return 0.0
-        return self.pool.total_withdrawal_delay_steps / self.pool.completed_withdrawals_count
+        return self.pool.average_fulfilled_withdrawal_delay()
 
     def step(self):
         """Vòng lặp 1 bước thời gian (1 giờ)."""
@@ -228,25 +326,20 @@ class DeFiLendingMesaModel(mesa.Model):
                 shock_withdrawal = (self.initial_total_supply * 0.50) / 12.0
                 self.pool.queue_withdrawal(lender_id=9999, amount=shock_withdrawal, current_step=self.current_step)
 
-        # Kịch bản S3: Utilization mục tiêu 0.90 đạt trong 12 bước từ bước 24 (Vượt điểm gãy 80%)
+        # Kịch bản S3: external debt demand moves pool cash into debt without
+        # changing any modeled borrower's principal or collateral.
         if self.scenario_id == "S3":
             if 24 <= self.current_step < 36:
-                # Đẩy utilization lên 90% bằng cách tăng nhu cầu vay ngoại sinh gán trực tiếp cho Borrowers
                 target_u = 0.90
                 current_u = self.pool.utilization_rate
                 if current_u < target_u and self.pool.total_cash_usdc > 0:
                     needed_borrow = (target_u * (self.pool.total_cash_usdc + self.pool.total_debt_usdc)) - self.pool.total_debt_usdc
                     step_borrow = max(0.0, needed_borrow / (36 - self.current_step))
-                    actual_step_borrow = min(step_borrow, self.pool.total_cash_usdc)
-                    if actual_step_borrow > 0:
-                        active_borrowers = [b for b in self.borrowers if b.debt_usdc > 0 and b.collateral_eth > 0]
-                        if active_borrowers:
-                            total_active_debt = sum(b.debt_usdc for b in active_borrowers)
-                            for b in active_borrowers:
-                                share = (b.debt_usdc / total_active_debt) if total_active_debt > 0 else (1.0 / len(active_borrowers))
-                                b.debt_usdc += actual_step_borrow * share
-                        self.pool.total_debt_usdc += actual_step_borrow
-                        self.pool.total_cash_usdc = max(0.0, self.pool.total_cash_usdc - actual_step_borrow)
+                    self.pool.add_exogenous_borrow_demand(step_borrow)
+
+        # Record transient eligible states before agents can defend or liquidate.
+        self._mark_ever_undercollateralized(eth_price)
+        self._update_unrealized_bad_debt(eth_price)
 
         # 3. Giai đoạn 1: Hành động của Borrowers (Kiểm tra vị thế, tự vệ hoặc vay thêm)
         for b in self.borrowers:
@@ -268,6 +361,9 @@ class DeFiLendingMesaModel(mesa.Model):
             self.event_logs.append(
                 f"⏳ [Giờ {self.current_step:03d}] Bể cạn thanh khoản! Hàng chờ rút kẹt ${self.pool.total_pending_withdrawals:,.0f} USDC (Utilization: {self.pool.utilization_rate*100:.1f}%)"
             )
+
+        self._mark_ever_undercollateralized(eth_price)
+        self._update_unrealized_bad_debt(eth_price)
 
         # 7. Thu thập dữ liệu cuối bước
         self.datacollector.collect(self)
