@@ -133,6 +133,19 @@ with tab1:
             ablation_columns = [c for c in ablation_columns if c in ablation_df.columns]
             st.dataframe(ablation_df[ablation_columns], width="stretch", hide_index=True,
                          alt="Kết quả năm cấu hình S5 Ablation Study")
+
+        s4_control_df = read_results("s4_liquidator_adaptive_only.csv")
+        if s4_control_df is not None:
+            st.markdown("### Đối chứng H5: chỉ Liquidator Adaptive trong S4")
+            st.caption("Seed 42; Borrower và Lender giữ Fixed. Cùng đường giá S1 (-43%), chỉ thêm sốc gas và trượt giá.")
+            s4_columns = [
+                "Mã thực nghiệm", "Kịch bản", "borrower_strategy", "lender_strategy",
+                "liquidator_strategy", "Tỷ lệ thanh lý (%)", "Lợi nhuận Liquidator ($)",
+                "liquidation_coverage_ratio", "total_bad_debt_exposure_usdc",
+            ]
+            s4_columns = [c for c in s4_columns if c in s4_control_df.columns]
+            st.dataframe(s4_control_df[s4_columns], width="stretch", hide_index=True,
+                         alt="Đối chứng S4 chỉ bật chiến lược Liquidator Adaptive")
     else:
         st.info("Chưa có sẵn file tổng kết kết quả. Vui lòng chạy lệnh: `python abm/runner.py` để tạo dữ liệu!")
 

@@ -60,16 +60,18 @@ class MarketEnvironment:
         slippage_s = np.full(168, 1.0)           # s = 1.0
         slippage_v = np.full(168, 1_000_000_000.0) # V = 1 tỷ USD
 
-        # S0: stable baseline, deterministic for a given seed and bounded to +/-5%.
-        if self.scenario_id == "S0":
+        # S0/S2/S3 share the same stable path so liquidity and rate shocks
+        # can be compared without also introducing a historical price crash.
+        if self.scenario_id in ["S0", "S2", "S3"]:
             rng = np.random.default_rng(self.seed)
             hourly_returns = rng.normal(0.0, 0.003, 168)
             hourly_returns[0] = 0.0
             relative_path = np.clip(np.cumsum(hourly_returns), -0.05, 0.05)
             prices = self.base_price * (1.0 + relative_path)
 
-        # S1: Cú sốc giá - Giảm 43% trong 24 bước từ bước 24
-        if self.scenario_id in ["S1", "S5"]:
+        # S1/S4/S5 share the same -43% shock path. S4 adds operating costs;
+        # S5 also adds liquidity/rate shocks, while S1 is the price-only case.
+        if self.scenario_id in ["S1", "S4", "S5"]:
             start_step = 24
             duration = 24
             target_drop = 0.43 # 43% drop
@@ -83,7 +85,7 @@ class MarketEnvironment:
             for t in range(start_step + duration, 168):
                 prices[t] = min(prices[t], p_target)
 
-        # S4: Cú sốc chi phí vận hành - Gas 100 USD, trượt giá s=5, V=100M USD (giữ nguyên đường giá lịch sử cơ sở)
+        # S4/S5: Operating cost shock - gas $100, 5x slippage, $100M depth.
         if self.scenario_id in ["S4", "S5"]:
             gas_fees[:] = 100.0 # Gas tăng vọt 100 USD/tx
             slippage_s[:] = 5.0 # Hệ số trượt giá tăng gấp 5

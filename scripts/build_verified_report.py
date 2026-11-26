@@ -51,6 +51,7 @@ def markdown_table(frame: pd.DataFrame) -> str:
 def build_report() -> str:
     matrix = pd.read_csv(os.path.join(RESULTS, "experiments_E1_E12_summary.csv"), encoding="utf-8-sig")
     ablation = pd.read_csv(os.path.join(RESULTS, "ablation_S5_summary.csv"), encoding="utf-8-sig")
+    s4_control = pd.read_csv(os.path.join(RESULTS, "s4_liquidator_adaptive_only.csv"), encoding="utf-8-sig")
     mc_runs = pd.read_csv(os.path.join(RESULTS, "monte_carlo_1000_runs.csv"), encoding="utf-8-sig")
     mc = pd.read_csv(os.path.join(RESULTS, "monte_carlo_1000_summary.csv"), encoding="utf-8-sig")
 
@@ -76,11 +77,30 @@ def build_report() -> str:
     e12 = matrix_by_id.loc["E12"]
     a1 = ablation_by_id.loc["A1"]
     a3 = ablation_by_id.loc["A3"]
+    s4_liq = s4_control.iloc[0]
 
     adaptive_single_pending = sum(float(matrix_by_id.loc[exp, "Rút tiền bị kẹt (USDC)"]) for exp in ("E4", "E6", "E10"))
     adaptive_single_exposure = sum(float(matrix_by_id.loc[exp, "total_bad_debt_exposure_usdc"]) for exp in ("E4", "E6", "E10"))
     e12_pending = float(e12["Rút tiền bị kẹt (USDC)"])
     e12_exposure = float(e12["total_bad_debt_exposure_usdc"])
+
+    e3_liq_rate = float(e3["Tỷ lệ thanh lý (%)"])
+    e9_liq_rate = float(e9["Tỷ lệ thanh lý (%)"])
+    e3_profit = float(e3["Lợi nhuận Liquidator ($)"])
+    e9_profit = float(e9["Lợi nhuận Liquidator ($)"])
+    if e9_liq_rate < e3_liq_rate and e9_profit < e3_profit:
+        h2_verdict = "được ủng hộ"
+    elif e9_liq_rate > e3_liq_rate and e9_profit > e3_profit:
+        h2_verdict = "không được ủng hộ"
+    else:
+        h2_verdict = "có kết quả hỗn hợp"
+    control_rate = float(s4_liq["Tỷ lệ thanh lý (%)"])
+    control_profit = float(s4_liq["Lợi nhuận Liquidator ($)"])
+    h5_control_verdict = (
+        "ủng hộ vai trò Liquidator thích nghi"
+        if control_rate > e9_liq_rate or control_profit > e9_profit
+        else "không cho thấy cải thiện so với Fixed"
+    )
 
     mc_long_rows = []
     for _, row in mc.iterrows():
@@ -120,6 +140,10 @@ def build_report() -> str:
         "",
         markdown_table(ablation),
         "",
+        "## Bảng 2b — Đối chứng S4 chỉ Liquidator Adaptive (seed 42)",
+        "",
+        markdown_table(s4_control),
+        "",
         "## Bảng 3 — Monte Carlo (1.000 run mỗi kịch bản/chiến lược)",
         "",
         markdown_table(mc_table),
@@ -127,15 +151,15 @@ def build_report() -> str:
         "## Đánh giá giả thuyết H1–H6 theo kết quả vừa chạy",
         "",
         f"1. **H1 — Giá ETH giảm làm tăng thanh lý: được ủng hộ trong mô hình.** E1/S0 Fixed = {e1['Tỷ lệ thanh lý (%)']:.2f}%, E3/S1 Fixed = {e3['Tỷ lệ thanh lý (%)']:.2f}%. Monte Carlo Fixed cũng tăng từ S0 mean {mc_by_group.loc[('S0', 'Fixed'), 'liquidation_rate_pct_mean']:.2f}% lên S1 mean {mc_by_group.loc[('S1', 'Fixed'), 'liquidation_rate_pct_mean']:.2f}%. Đây là đối chứng rõ giữa hai đường giá đã tách.",
-        f"2. **H2 — Sốc chi phí làm giảm thanh lý/lợi nhuận: không được ủng hộ theo phép so sánh E9 < E1; phép thử còn bị nhiễu đường giá.** E9 có tỷ lệ thanh lý {e9['Tỷ lệ thanh lý (%)']:.2f}% so với E1 {e1['Tỷ lệ thanh lý (%)']:.2f}%; lợi nhuận liquidator lần lượt ${e9['Lợi nhuận Liquidator ($)']:,.2f} và ${e1['Lợi nhuận Liquidator ($)']:,.2f}. Trong `abm/market.py`, chỉ S0 được thay bằng baseline ổn định, còn S4 giữ `raw_prices`; vì vậy E9 không phải phép thử chỉ thay gas/slippage so với S0.",
-        f"3. **H3 — Sốc rút vốn gây tắc nghẽn: dấu hiệu được quan sát, nhưng S2 không hoàn toàn cô lập cú sốc thanh khoản.** E5 Fixed kẹt ${e5['Rút tiền bị kẹt (USDC)']:,.2f}; E6 Adaptive kẹt ${e6['Rút tiền bị kẹt (USDC)']:,.2f}, Fulfillment Rate {e6['withdrawal_fulfillment_rate']:.2%}. Code hiện giữ đường `raw_prices` cho S2, nên kết quả thể hiện hệ quả mô phỏng nhưng có thể đồng thời chịu ảnh hưởng từ chuỗi May 2021.",
+        f"2. **H2 — Sốc chi phí làm giảm thanh lý/lợi nhuận: {h2_verdict}.** Đối chứng đúng là E9 (S4 Fixed: gas $100, trượt giá 5x) với E3 (S1 Fixed); hai kịch bản dùng cùng đường giá sập -43%. Tỷ lệ thanh lý E9 {e9_liq_rate:.2f}% so với E3 {e3_liq_rate:.2f}%; lợi nhuận Liquidator lần lượt ${e9_profit:,.2f} và ${e3_profit:,.2f}. Đây là so sánh seed 42, cùng cấu hình ngoài chi phí vận hành.",
+        f"3. **H3 — Sốc rút vốn gây tắc nghẽn: được quan sát trên đường giá ổn định chung S0/S2.** E5 Fixed kẹt ${e5['Rút tiền bị kẹt (USDC)']:,.2f}; E6 Adaptive kẹt ${e6['Rút tiền bị kẹt (USDC)']:,.2f}, Fulfillment Rate {e6['withdrawal_fulfillment_rate']:.2%}. S2 dùng cùng đường giá S0 nên đối chứng không kèm cú sập tháng 5/2021.",
         f"4. **H4 — Borrower Adaptive giảm thanh lý trong S1: được ủng hộ.** E4 Adaptive = {e4['Tỷ lệ thanh lý (%)']:.2f}% so với E3 Fixed = {e3['Tỷ lệ thanh lý (%)']:.2f}% (giảm {e3['Tỷ lệ thanh lý (%)'] - e4['Tỷ lệ thanh lý (%)']:.2f} điểm phần trăm). Monte Carlo S1 mean cũng thấp hơn ở Adaptive ({mc_by_group.loc[('S1', 'Adaptive'), 'liquidation_rate_pct_mean']:.2f}%) so với Fixed ({mc_by_group.loc[('S1', 'Fixed'), 'liquidation_rate_pct_mean']:.2f}%).",
-        f"5. **H5 — Liquidator Adaptive duy trì thanh lý tốt hơn khi có sốc chi phí: được ủng hộ một phần, chưa cô lập đầy đủ trong S4.** E10 toàn bộ nhóm Adaptive đạt {e10['Tỷ lệ thanh lý (%)']:.2f}% và lợi nhuận ${e10['Lợi nhuận Liquidator ($)']:,.2f}, so với E9 Fixed {e9['Tỷ lệ thanh lý (%)']:.2f}% và ${e9['Lợi nhuận Liquidator ($)']:,.2f}. Ablation A3 chỉ bật Liquidator Adaptive trong S5 cho {a3['Tỷ lệ thanh lý (%)']:.2f}% và ${a3['Lợi nhuận Liquidator ($)']:,.2f}, so với A1 {a1['Tỷ lệ thanh lý (%)']:.2f}% và ${a1['Lợi nhuận Liquidator ($)']:,.2f}; đây là bằng chứng riêng cho chiến lược liquidator trong S5, không thay thế phép thử cô lập dưới S4.",
+        f"5. **H5 — Liquidator Adaptive duy trì thanh lý tốt hơn khi có sốc chi phí: {h5_control_verdict} trong đối chứng S4, cùng với hai so sánh bổ sung.** E10 toàn bộ nhóm Adaptive đạt {e10['Tỷ lệ thanh lý (%)']:.2f}% và lợi nhuận ${e10['Lợi nhuận Liquidator ($)']:,.2f}, so với E9 Fixed {e9['Tỷ lệ thanh lý (%)']:.2f}% và ${e9['Lợi nhuận Liquidator ($)']:,.2f}. Trong S5, A3 chỉ bật Liquidator Adaptive đạt {a3['Tỷ lệ thanh lý (%)']:.2f}% và ${a3['Lợi nhuận Liquidator ($)']:,.2f}, so với A1 {a1['Tỷ lệ thanh lý (%)']:.2f}% và ${a1['Lợi nhuận Liquidator ($)']:,.2f}. Đối chứng S4 chỉ bật Liquidator Adaptive cho {control_rate:.2f}% và ${control_profit:,.2f} so với E9; kết quả này cô lập tác nhân trong cùng S4 (seed 42).",
         f"6. **H6 — Tương tác cú sốc kết hợp: có bằng chứng một-run về queue và bad debt exposure Adaptive vượt tổng các thành phần đơn lẻ; chưa đủ để khẳng định tổng quát.** E12 pending ${e12_pending:,.2f} vượt tổng E4+E6+E10 ${adaptive_single_pending:,.2f}; exposure ${e12_exposure:,.2f} vượt tổng exposure E4+E6+E10 ${adaptive_single_exposure:,.2f}. Tuy nhiên, E12 utilization max {e12['Utilization max (%)']:.2f}% bằng mức trần và không cao hơn E6; bằng chứng cộng dồn này đến từ một seed, còn Monte Carlo không chạy S2/S4 để ước lượng tương tác.",
         "",
         "## Giới hạn diễn giải",
         "",
-        "- Monte Carlo đo độ biến thiên do seed trong mô hình hiện tại; nó không khắc phục được sai khác giữa thiết kế kịch bản và implementation. Cụ thể, S2/S3/S4 tiếp tục lấy `raw_prices` May 2021; chỉ S0 được thay bằng baseline ổn định, S1/S5 áp cú sốc giá.",
+        "- Monte Carlo 6.000 run được giữ nguyên theo yêu cầu; các thay đổi đường giá S2/S3/S4 chỉ được áp dụng cho ma trận E1–E12 và đối chứng seed 42, không diễn giải lại kết quả Monte Carlo cho ba kịch bản này.",
         "- Các so sánh E1–E12/A1–A5 chỉ dùng seed 42; không có kiểm định ý nghĩa thống kê cho các bảng này.",
         "- VaR95 được dùng theo yêu cầu dưới dạng phân vị 95% của từng chỉ số. Với fulfillment rate, đây là phân vị cao của tỷ lệ hoàn tất, không phải thước đo tổn thất phía xấu.",
         "- Dữ liệu run-level Monte Carlo đầy đủ nằm tại `results/monte_carlo_1000_runs.csv`; các bảng nguồn: `results/experiments_E1_E12_summary.csv`, `results/ablation_S5_summary.csv`, `results/monte_carlo_1000_summary.csv`.",

@@ -20,11 +20,23 @@ def test_market_environment_initialization():
     assert m.prices.max() <= 2100.0
     assert (m.prices == MarketEnvironment(scenario_id="S0", base_price=2000.0).prices).all()
 
+    # S2 and S3 isolate their shocks on the exact S0 stable price path.
+    for scenario in ("S2", "S3"):
+        isolated = MarketEnvironment(scenario_id=scenario, base_price=2000.0, seed=42)
+        assert (isolated.prices == m.prices).all()
+
     # S1 price shock: price drops significantly
     m1 = MarketEnvironment(scenario_id="S1", base_price=2000.0)
     assert m1.prices[48] < m1.prices[24]
     assert pytest.approx(m1.prices[48] / m1.prices[24], 0.05) == 0.57
     assert m1.prices.min() < m.prices.min() * 0.75
+
+    # S4 changes operating costs only and shares S1's price-shock path.
+    m4 = MarketEnvironment(scenario_id="S4", base_price=2000.0, seed=42)
+    assert (m4.prices == m1.prices).all()
+    assert m4.gas_fees[0] == 100.0
+    assert m4.slippage_s[0] == 5.0
+    assert m4.slippage_v[0] == 100_000_000.0
 
 
 def test_kink_interest_rate_model():

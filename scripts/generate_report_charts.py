@@ -26,9 +26,12 @@ plt.rcParams.update({
 })
 
 
-def save_figure(fig, filename):
+def save_figure(fig, filename, tight_rect=None):
     path = os.path.join(FIG_DIR, filename)
-    fig.tight_layout()
+    if tight_rect is None:
+        fig.tight_layout()
+    else:
+        fig.tight_layout(rect=tight_rect)
     fig.savefig(path, bbox_inches="tight")
     plt.close(fig)
     print(f"Đã tạo {path}")
@@ -74,7 +77,7 @@ def plot_e1_e12_comparison():
         run["Mã thực nghiệm"] = pd.Categorical(run["Mã thực nghiệm"], categories=experiment_order, ordered=True)
     fixed = fixed.sort_values("Mã thực nghiệm")
     adaptive = adaptive.sort_values("Mã thực nghiệm")
-    labels = fixed["Mã thực nghiệm"].tolist()
+    labels = [f"S{i} (E{2 * i + 1}–E{2 * i + 2})" for i in range(6)]
     for ax, (metric, ylabel) in zip(axes, series):
         width = 0.38
         a = ax.bar(x - width / 2, fixed[metric], width, label="Fixed",
@@ -87,7 +90,7 @@ def plot_e1_e12_comparison():
         ax.grid(axis="y", color="#bbbbbb", linewidth=0.5)
         ax.legend(ncols=2)
     axes[-1].set_xticks(x, labels)
-    axes[-1].set_xlabel("Mã thực nghiệm")
+    axes[-1].set_xlabel("Kịch bản và cặp thực nghiệm")
     fig.suptitle("Hình 2. So sánh E1–E12 theo dữ liệu vừa chạy", fontsize=13)
     save_figure(fig, "fig2_e1_e12_comparison.png")
 
@@ -181,15 +184,19 @@ def plot_s5_ablation():
         bars = ax.bar(df["Mã thực nghiệm"], df[metric], facecolor="white", edgecolor="black")
         for bar, hatch in zip(bars, hatches):
             bar.set_hatch(hatch)
-        ax.bar_label(bars, fmt="%.2f", padding=2, fontsize=8)
+        if metric == "Rút tiền bị kẹt (USDC)":
+            labels = [f"{value / 1000:.1f}k" if abs(value) >= 1000 else f"{value:.1f}" for value in df[metric]]
+            ax.bar_label(bars, labels=labels, padding=2, fontsize=8)
+        else:
+            ax.bar_label(bars, fmt="%.2f", padding=2, fontsize=8)
         ax.set_title(title)
         ax.grid(axis="y", color="#bbbbbb", linewidth=0.5)
     fig.suptitle("Hình 6. So sánh năm cấu hình Ablation trong S5", fontsize=13)
     fig.text(0.5, 0.015,
              "A1 All-Fixed   |   A2 Borrower-Adaptive   |   A3 Liquidator-Adaptive   |   A4 Lender-Adaptive   |   A5 All-Adaptive",
              ha="center", va="bottom", fontsize=9)
-    fig.subplots_adjust(bottom=0.16, top=0.82, wspace=0.32)
-    save_figure(fig, "fig6_s5_ablation.png")
+    fig.subplots_adjust(top=0.82, wspace=0.32)
+    save_figure(fig, "fig6_s5_ablation.png", tight_rect=[0, 0.10, 1, 0.92])
 
 
 if __name__ == "__main__":

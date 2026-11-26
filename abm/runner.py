@@ -148,6 +148,41 @@ def run_s5_ablation_study(
     return summary_df, timeseries_df
 
 
+def run_s4_liquidator_adaptive_only(
+    num_borrowers: int = 100,
+    seed: int = 42,
+    save: bool = True,
+) -> tuple:
+    """Run S4 with only the liquidator strategy adaptive (seed-matched control)."""
+    exp = {
+        "exp_id": "S4_LiqAdaptive_Only",
+        "scenario": "S4",
+        "strategy": "mixed",
+        "desc": "S4 — chỉ Liquidator Adaptive",
+        "hyp": "Đối chứng cô lập vai trò Liquidator trong S4",
+        "borrower_strategy": "fixed",
+        "lender_strategy": "fixed",
+        "liquidator_strategy": "adaptive",
+    }
+    summary, timeseries = run_single_experiment(exp, num_borrowers=num_borrowers, seed=seed)
+    summary["borrower_strategy"] = "fixed"
+    summary["lender_strategy"] = "fixed"
+    summary["liquidator_strategy"] = "adaptive"
+    if save:
+        os.makedirs(RESULTS_DIR, exist_ok=True)
+        pd.DataFrame([summary]).to_csv(
+            os.path.join(RESULTS_DIR, "s4_liquidator_adaptive_only.csv"),
+            index=False,
+            encoding="utf-8-sig",
+        )
+        timeseries.to_csv(
+            os.path.join(RESULTS_DIR, "s4_liquidator_adaptive_only_timeseries.csv"),
+            index=False,
+            encoding="utf-8-sig",
+        )
+    return summary, timeseries
+
+
 def run_all_experiments(num_borrowers: int = 100, seed: int = 42, verbose: bool = True) -> tuple:
     """Chạy toàn bộ 12 thực nghiệm E1 đến E12."""
     os.makedirs(RESULTS_DIR, exist_ok=True)
